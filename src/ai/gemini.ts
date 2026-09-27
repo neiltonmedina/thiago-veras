@@ -1,8 +1,9 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../config.js';
 
-const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+// Em modo simulação, evita chamar Gemini real (nem exige chave válida)
+const genAI = config.simulate ? null : new GoogleGenerativeAI(config.gemini.apiKey);
+const model = genAI?.getGenerativeModel({ model: 'gemini-2.5-flash' }) ?? null;
 
 export type Intent =
   | { type: 'greeting' }
@@ -39,6 +40,9 @@ Exemplos:
 "pode reservar essa aí" → {"type":"want_reserve"}`;
 
 export async function classify(text: string): Promise<Intent> {
+  if (!model) {
+    return fallbackClassify(text);
+  }
   try {
     const resp = await model.generateContent({
       contents: [
@@ -63,17 +67,22 @@ export async function classify(text: string): Promise<Intent> {
 
 function fallbackClassify(text: string): Intent {
   const t = text.toLowerCase().trim();
-  if (/^(oi|ola|olá|hey|bom dia|boa tarde|boa noite|tudo bem)/i.test(t)) {
-    return { type: 'greeting' };
-  }
-  if (/(atendente|humano|pessoa|falar com|dono|proprietar)/i.test(t)) {
+
+  // Prioridade: pedido de humano pode vir junto com saudação ("oi, quero falar com alguém")
+  if (/(atendente|humano|falar com (uma )?pessoa|falar com alguem|falar com alguém|falar com o dono|dono|proprietari?o)/i.test(t)) {
     return { type: 'want_human' };
   }
-  if (/(reserv|agend|marc|alug)/i.test(t)) {
+  // Reserva/agendamento
+  if (/(reserv|agend|marc(ar|o)|alug(ar|o))/i.test(t)) {
     return { type: 'want_reserve' };
   }
-  if (/(lista|opcoes|opções|casas|disponivel|disponíveis|o que tem)/i.test(t)) {
+  // Lista/opções
+  if (/(lista|op(c|ç)(oes|ões)|casas dispon(i|í)vei?s?|o que tem|todas as casas|quais casas)/i.test(t)) {
     return { type: 'list_houses' };
+  }
+  // Saudação curta — só se for mensagem breve iniciando por saudação
+  if (/^(oi|ola|olá|hey|bom dia|boa tarde|boa noite|tudo bem)\W*$/i.test(t) || t.length < 15 && /^(oi|ola|olá|hey|bom dia|boa tarde|boa noite|tudo bem)/i.test(t)) {
+    return { type: 'greeting' };
   }
   return { type: 'select_house', query: t };
 }

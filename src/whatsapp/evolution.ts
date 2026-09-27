@@ -14,13 +14,18 @@ function normalizeNumber(n: string): string {
   return n.replace(/\D/g, '');
 }
 
+function indent(s: string): string {
+  return s.split('\n').map(l => '    ' + l).join('\n');
+}
+
 export async function sendText(to: string, text: string): Promise<void> {
   const number = normalizeNumber(to);
+  if (config.simulate) {
+    console.log(`\n  📱 BOT → ${number} (texto):\n${indent(text)}\n`);
+    return;
+  }
   try {
-    await client.post(`/message/sendText/${config.evolution.instance}`, {
-      number,
-      text,
-    });
+    await client.post(`/message/sendText/${config.evolution.instance}`, { number, text });
   } catch (err) {
     logAxiosError('sendText', err);
     throw err;
@@ -29,6 +34,10 @@ export async function sendText(to: string, text: string): Promise<void> {
 
 export async function sendImage(to: string, imageUrl: string, caption?: string): Promise<void> {
   const number = normalizeNumber(to);
+  if (config.simulate) {
+    console.log(`  🖼️  BOT → ${number} (imagem): ${imageUrl}${caption ? `\n${indent(caption)}` : ''}`);
+    return;
+  }
   try {
     await client.post(`/message/sendMedia/${config.evolution.instance}`, {
       number,
@@ -44,6 +53,10 @@ export async function sendImage(to: string, imageUrl: string, caption?: string):
 
 export async function sendVideo(to: string, videoUrl: string, caption?: string): Promise<void> {
   const number = normalizeNumber(to);
+  if (config.simulate) {
+    console.log(`  🎥 BOT → ${number} (vídeo):  ${videoUrl}${caption ? `\n${indent(caption)}` : ''}`);
+    return;
+  }
   try {
     await client.post(`/message/sendMedia/${config.evolution.instance}`, {
       number,

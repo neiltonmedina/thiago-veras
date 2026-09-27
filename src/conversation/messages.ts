@@ -1,5 +1,10 @@
 import type { House } from '../types.js';
 
+const brl = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+function money(v: number): string {
+  return `R$ ${brl.format(v)}`;
+}
+
 export function greeting(catalog: House[]): string {
   const list = catalog.slice(0, 5).map(h =>
     `*${h.code}* — ${h.name}\n_${h.city} · ${h.bedrooms}q · até ${h.capacity} pessoas_`
@@ -18,8 +23,8 @@ export function greeting(catalog: House[]): string {
 
 export function houseCaption(h: House): string {
   const priceLine = h.weekendPrice
-    ? `💰 *R$ ${h.dailyPrice}/diária* · R$ ${h.weekendPrice}/fim de semana`
-    : `💰 *R$ ${h.dailyPrice}/diária*`;
+    ? `💰 *${money(h.dailyPrice)}/diária* · ${money(h.weekendPrice)}/fim de semana`
+    : `💰 *${money(h.dailyPrice)}/diária*`;
 
   const amen = h.amenities.length ? h.amenities.map(a => `• ${a}`).join('\n') + '\n\n' : '';
   const desc = h.description ? `${h.description}\n\n` : '';

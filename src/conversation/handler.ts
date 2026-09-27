@@ -27,8 +27,8 @@ export async function handleMessage(m: IncomingMessage): Promise<void> {
     return;
   }
 
-  // Palavras diretas de pedir atendente
-  if (/^(atendente|humano|falar com|ajuda)/i.test(t)) {
+  // Palavras diretas de pedir atendente (checa em qualquer posição da mensagem)
+  if (/\b(atendente|humano|falar com (uma )?pessoa|falar com alguem|falar com alguém|falar com o dono|ajuda|preciso de ajuda)\b/i.test(t)) {
     await sendText(m.from, msg.HANDOFF);
     await notifySupport(m.from, t);
     setState(m.from, { step: 'handoff_human' });

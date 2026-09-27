@@ -1,6 +1,18 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+// Modo simulação: valida fluxos localmente sem WhatsApp real nem Gemini real.
+// Setar SIMULATE=1 antes de rodar (ver `npm run simulate`).
+const isSimulate = process.env.SIMULATE === '1';
+if (isSimulate) {
+  process.env.EVOLUTION_API_URL ??= 'http://mock.local';
+  process.env.EVOLUTION_API_KEY ??= 'simulate-mock-key-1234567890';
+  process.env.EVOLUTION_INSTANCE ??= 'mock';
+  process.env.GEMINI_API_KEY ??= 'simulate-mock-gemini-key-1234567890';
+  process.env.SUPPORT_PHONE ??= '5586999999999';
+  process.env.MEDIA_BASE_URL ??= 'http://mock.local/media';
+}
+
 const schema = z.object({
   PORT: z.coerce.number().default(3000),
   EVOLUTION_API_URL: z.string().url(),
@@ -23,6 +35,7 @@ if (!parsed.success) {
 const env = parsed.data;
 
 export const config = {
+  simulate: isSimulate,
   port: env.PORT,
   evolution: {
     baseUrl: env.EVOLUTION_API_URL.replace(/\/$/, ''),

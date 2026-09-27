@@ -6,9 +6,10 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && cp src/houses/data.json dist/houses/data.json",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "simulate": "SIMULATE=1 tsx src/simulate.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
