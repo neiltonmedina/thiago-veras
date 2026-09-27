@@ -8,3 +8,5 @@ docker/.env
 .vscode
 .idea
 coverage
+data/*.db
+data/*.db-*

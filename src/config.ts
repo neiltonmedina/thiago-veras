@@ -11,6 +11,7 @@ if (isSimulate) {
   process.env.GEMINI_API_KEY ??= 'simulate-mock-gemini-key-1234567890';
   process.env.SUPPORT_PHONE ??= '5586999999999';
   process.env.MEDIA_BASE_URL ??= 'http://mock.local/media';
+  process.env.DB_PATH ??= ':memory:'; // em simulação, DB em memória (não persiste)
 }
 
 const schema = z.object({
@@ -21,6 +22,7 @@ const schema = z.object({
   GEMINI_API_KEY: z.string().min(10),
   SUPPORT_PHONE: z.string().regex(/^\d{12,13}$/, 'formato esperado: 5586999999999'),
   MEDIA_BASE_URL: z.string().url(),
+  DB_PATH: z.string().default('./data/thiago-veras.db'),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -47,4 +49,5 @@ export const config = {
   },
   supportPhone: env.SUPPORT_PHONE,
   mediaBaseUrl: env.MEDIA_BASE_URL.replace(/\/$/, ''),
+  dbPath: env.DB_PATH,
 };
