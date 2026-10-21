@@ -1,0 +1,13 @@
+# Só o painel e o health ficam públicos. O webhook do WhatsApp e as mídias
+# são acessados pelo Evolution por dentro (host.docker.internal), nunca pela internet:
+# expor /webhook/messages deixaria qualquer um forjar mensagens e fazer o bot
+# disparar WhatsApp pra números arbitrários.
+{$DOMAIN} {
+	@public path /admin /admin/* /health
+	handle @public {
+		reverse_proxy host.docker.internal:3000
+	}
+	handle {
+		respond 404
+	}
+}

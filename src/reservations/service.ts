@@ -62,8 +62,3 @@ export function attachClientData(input: {
   store.attachClient(input.reservationId, client.id);
   return client;
 }
-
-/** Job periódico: marca pending vencidas como expired. Retorna quantas. */
-export function expireOldPending(): number {
-  return store.expirePending();
-}

@@ -10,3 +10,4 @@ docker/.env
 coverage
 data/*.db
 data/*.db-*
+certs/

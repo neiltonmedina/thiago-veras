@@ -51,6 +51,28 @@ export async function sendImage(to: string, imageUrl: string, caption?: string):
   }
 }
 
+/** Envia imagem gerada em memória (ex.: QR Code do Pix), em base64 sem prefixo data:. */
+export async function sendImageBase64(to: string, base64: string, caption?: string): Promise<void> {
+  const number = normalizeNumber(to);
+  if (config.simulate) {
+    console.log(`  🖼️  BOT → ${number} (imagem gerada, ${base64.length} bytes base64)${caption ? `\n${indent(caption)}` : ''}`);
+    return;
+  }
+  try {
+    await client.post(`/message/sendMedia/${config.evolution.instance}`, {
+      number,
+      mediatype: 'image',
+      mimetype: 'image/png',
+      fileName: 'pix.png',
+      media: base64,
+      ...(caption ? { caption } : {}),
+    });
+  } catch (err) {
+    logAxiosError('sendImageBase64', err);
+    throw err;
+  }
+}
+
 export async function sendVideo(to: string, videoUrl: string, caption?: string): Promise<void> {
   const number = normalizeNumber(to);
   if (config.simulate) {

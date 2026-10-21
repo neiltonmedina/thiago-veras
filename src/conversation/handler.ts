@@ -9,6 +9,8 @@ import { config } from '../config.js';
 import { parseDateRange, fromIsoDate } from '../dates/parser.js';
 import { parseClientData } from '../reservations/clientData.js';
 import { checkAvailability, createPendingReservation, attachClientData } from '../reservations/service.js';
+import { sendPixForReservation, checkPayment } from '../reservations/lifecycle.js';
+import * as store from '../reservations/store.js';
 
 export async function handleMessage(m: IncomingMessage): Promise<void> {
   console.log(`[in] ${m.from}: ${m.text}`);
@@ -33,7 +35,13 @@ export async function handleMessage(m: IncomingMessage): Promise<void> {
     return;
   }
 
-  // ============ Estados da Fase 2 ============
+  // ============ Estados da Fase 2/3 ============
+
+  if (state.step === 'reservation_pending'
+      && /\b(paguei|pago|fiz o pix|transferi|comprovante|ja paguei|já paguei)\b/i.test(t)) {
+    await handlePaidClaim(m.from, state.reservationId);
+    return;
+  }
 
   if (state.step === 'awaiting_dates') {
     await handleDatesReply(m.from, t, state.houseCode, catalog);
@@ -191,6 +199,10 @@ async function handleClientDataReply(
   catalog: House[],
 ): Promise<void> {
   const data = parseClientData(text);
+  if (data === 'invalid_cpf') {
+    await sendText(from, msg.INVALID_CPF);
+    return; // mantém estado
+  }
   if (!data) {
     await sendText(from, msg.INVALID_CLIENT_DATA);
     return; // mantém estado
@@ -221,30 +233,60 @@ async function handleClientDataReply(
     phone: from, name: data.name, cpf: data.cpf,
   });
 
-  await sendText(from, msg.reservationConfirmed({
-    id: reservation.id, house,
-    clientName: data.name, clientCpf: data.cpf,
-    checkIn, checkOut,
-    nights: reservation.nights, totalCents: reservation.totalCents,
-  }));
+  // Com Pix ativo, o cliente recebe a cobrança do sinal; sem Pix (ou se a Efí
+  // falhar), o pagamento é combinado com o atendente como na Fase 2.
+  const depositCents = await sendPixForReservation(reservation, house, { name: data.name, cpf: data.cpf });
+  if (depositCents === null) {
+    await sendText(from, msg.reservationConfirmed({
+      id: reservation.id, house,
+      clientName: data.name, clientCpf: data.cpf,
+      checkIn, checkOut,
+      nights: reservation.nights, totalCents: reservation.totalCents,
+    }));
+  }
 
   await notifySupport(from, msg.reservationNotifySupport({
     id: reservation.id, house, clientPhone: from,
     clientName: data.name, clientCpf: data.cpf,
     checkIn, checkOut,
     nights: reservation.nights, totalCents: reservation.totalCents,
+    depositCents: depositCents ?? undefined,
   }));
 
   setState(from, { step: 'reservation_pending', reservationId: reservation.id });
 }
 
-async function presentHouse(to: string, h: House): Promise<void> {
-  const photos = h.photos.slice(0, 3);
-  for (const p of photos) {
-    await sendImage(to, absoluteMediaUrl(p));
+async function handlePaidClaim(from: string, reservationId: number): Promise<void> {
+  const r = store.getById(reservationId);
+  if (r && (r.paidAt || r.status === 'confirmed')) {
+    await sendText(from, `Sua reserva #${r.id} já está confirmada ✅`);
+    return;
   }
-  if (h.video) {
-    await sendVideo(to, absoluteMediaUrl(h.video));
+  if (r?.pixTxid) {
+    // Se cair agora, checkPayment já manda a confirmação
+    const result = await checkPayment(r).catch(err => {
+      console.error('[pix] falha ao consultar pagamento:', err);
+      return 'pending' as const;
+    });
+    if (result === 'pending') await sendText(from, msg.PAYMENT_NOT_FOUND_YET);
+    return;
+  }
+  await sendText(from, `Obrigado! 🙏 Vou pedir pro atendente conferir o pagamento da reserva #${reservationId}.`);
+  await notifySupport(from, `💬 Cliente diz que pagou a reserva #${reservationId}. Confira e confirme no painel.\n📱 ${from}`);
+}
+
+async function presentHouse(to: string, h: House): Promise<void> {
+  // Uma foto faltando não pode impedir o cliente de receber a ficha da casa
+  const media: Array<() => Promise<void>> = [
+    ...h.photos.slice(0, 3).map(p => () => sendImage(to, absoluteMediaUrl(p))),
+    ...(h.video ? [() => sendVideo(to, absoluteMediaUrl(h.video!))] : []),
+  ];
+  for (const send of media) {
+    try {
+      await send();
+    } catch {
+      console.error(`[media] falha ao enviar mídia da ${h.code} — confira com npm run check:media`);
+    }
   }
   await sendText(to, msg.houseCaption(h));
 }

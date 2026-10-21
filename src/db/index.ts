@@ -46,6 +46,23 @@ db.exec(`
     ON reservations(expires_at) WHERE status = 'pending';
 `);
 
+// Colunas adicionadas depois da Fase 2. SQLite não tem ADD COLUMN IF NOT EXISTS,
+// então checamos antes pra a migração rodar em bancos já existentes.
+function addColumnIfMissing(table: string, column: string, definition: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some(c => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+addColumnIfMissing('reservations', 'source', `TEXT NOT NULL DEFAULT 'whatsapp'`); // 'whatsapp' | 'manual'
+addColumnIfMissing('reservations', 'note', 'TEXT');
+addColumnIfMissing('reservations', 'deposit_cents', 'INTEGER');
+addColumnIfMissing('reservations', 'pix_txid', 'TEXT');
+addColumnIfMissing('reservations', 'pix_copy_paste', 'TEXT');
+addColumnIfMissing('reservations', 'paid_at', 'INTEGER');
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_res_pix_txid ON reservations(pix_txid) WHERE pix_txid IS NOT NULL`);
+
 /** Fecha o banco. Chamar em graceful shutdown. */
 export function closeDb(): void {
   db.close();

@@ -99,13 +99,16 @@ export const ASK_CLIENT_DATA = [
   `• *Nome completo*`,
   `• *CPF* (só os números ou com pontuação)`,
   ``,
-  `Exemplo: _João Silva, 12345678900_`,
+  `Exemplo: _João Silva, 123.456.789-09_`,
 ].join('\n');
 
 export const INVALID_CLIENT_DATA =
   `Não consegui ler seus dados. 🤔\n\n` +
   `Preciso do *nome completo* e do *CPF* (11 dígitos).\n` +
-  `Exemplo: _João Silva, 12345678900_`;
+  `Exemplo: _João Silva, 123.456.789-09_`;
+
+export const INVALID_CPF =
+  `Esse CPF não parece válido. 🤔 Confere os números e me manda de novo, junto com o nome completo.`;
 
 export function reservationConfirmed(input: {
   id: number;
@@ -128,8 +131,6 @@ export function reservationConfirmed(input: {
     `💰 Total: *${moneyCents(input.totalCents)}*`,
     ``,
     `⏰ Segurei essa data por *30 minutos*. Um atendente vai te chamar pra combinar o pagamento e confirmar.`,
-    ``,
-    `_(Em breve o pagamento via Pix será automático 🚀)_`,
   ].join('\n');
 }
 
@@ -143,7 +144,11 @@ export function reservationNotifySupport(input: {
   checkOut: Date;
   nights: number;
   totalCents: number;
+  depositCents?: number;
 }): string {
+  const payment = input.depositCents
+    ? `⏰ Pix do sinal (${moneyCents(input.depositCents)}) enviado. Confirmo sozinho quando cair; expira em 30 min.`
+    : `⏰ Combine o pagamento com o cliente. Expira em 30 min se não for confirmada no painel.`;
   return [
     `📩 *Nova pré-reserva #${input.id}*`,
     ``,
@@ -155,6 +160,109 @@ export function reservationNotifySupport(input: {
     `📄 CPF ${formatCpf(input.clientCpf)}`,
     `📱 ${input.clientPhone}`,
     ``,
-    `⏰ Expira em 30 min se não for confirmada.`,
+    payment,
   ].join('\n');
 }
+
+// ============ Fase 3 — Pix ============
+
+export function reservationAwaitingPix(input: {
+  id: number;
+  house: House;
+  checkIn: Date;
+  checkOut: Date;
+  nights: number;
+  totalCents: number;
+  depositCents: number;
+  depositPercent: number;
+}): string {
+  const diarias = input.nights === 1 ? '1 diária' : `${input.nights} diárias`;
+  const isFull = input.depositCents >= input.totalCents;
+  return [
+    `✅ *Pré-reserva #${input.id} criada!*`,
+    ``,
+    `🏠 ${input.house.name}`,
+    `📅 ${formatBR(input.checkIn)} → ${formatBR(input.checkOut)}  (${diarias})`,
+    `💰 Total: ${moneyCents(input.totalCents)}`,
+    isFull
+      ? `💳 Pagamento via Pix: *${moneyCents(input.depositCents)}*`
+      : `💳 Sinal (${input.depositPercent}%) via Pix: *${moneyCents(input.depositCents)}*`,
+    ``,
+    `⏰ Segurei a data por *30 minutos*. Pague pelo QR Code ou pelo código *copia e cola* abaixo.`,
+    `Assim que o Pix cair, confirmo sua reserva automaticamente. 🙌`,
+  ].join('\n');
+}
+
+export const PIX_QR_CAPTION = `QR Code do Pix 👆 Abra o app do seu banco e escaneie.`;
+
+export const PIX_COPY_PASTE_INTRO = `👇 *Pix copia e cola* (toque e segure pra copiar):`;
+
+export function paymentConfirmed(input: {
+  id: number;
+  house: House;
+  checkIn: Date;
+  checkOut: Date;
+  totalCents: number;
+  paidCents: number | null;
+}): string {
+  const remaining = input.paidCents != null ? input.totalCents - input.paidCents : 0;
+  return [
+    `🎉 *Reserva #${input.id} confirmada!*`,
+    ``,
+    `🏠 ${input.house.name}`,
+    `📅 Check-in ${formatBR(input.checkIn)} · Check-out ${formatBR(input.checkOut)}`,
+    input.paidCents != null ? `✅ Recebemos ${moneyCents(input.paidCents)}` : null,
+    remaining > 0 ? `💰 Restante: ${moneyCents(remaining)} (combinamos com você antes do check-in)` : null,
+    ``,
+    `Nosso atendente vai te chamar com as orientações de chegada. Boa viagem! 🏖️`,
+  ].filter(l => l !== null).join('\n');
+}
+
+export const PAYMENT_NOT_FOUND_YET =
+  `Ainda não identifiquei o pagamento. ⏳ O Pix pode levar alguns minutos pra aparecer.\n\n` +
+  `Eu confiro sozinho a cada minuto e te aviso assim que cair. Se precisar, digite *atendente*.`;
+
+export function reservationExpired(id: number, house: House): string {
+  return [
+    `⏰ A pré-reserva #${id} da *${house.name}* expirou porque o pagamento não foi identificado em 30 minutos.`,
+    ``,
+    `Se ainda quiser, me mande as datas de novo que eu verifico a disponibilidade. Se você *já pagou*, digite *atendente*.`,
+  ].join('\n');
+}
+
+export function reservationCancelled(id: number, house: House): string {
+  return `A reserva #${id} da *${house.name}* foi cancelada. Qualquer dúvida, digite *atendente*.`;
+}
+
+export function supportPaymentReceived(input: {
+  id: number; house: House; clientPhone: string; checkIn: Date; checkOut: Date; paidCents: number; totalCents: number;
+}): string {
+  return [
+    `💰 *Pix recebido — reserva #${input.id} confirmada*`,
+    ``,
+    `🏠 ${input.house.code} — ${input.house.name}`,
+    `📅 ${formatBR(input.checkIn)} → ${formatBR(input.checkOut)}`,
+    `✅ Pago: ${moneyCents(input.paidCents)} de ${moneyCents(input.totalCents)}`,
+    `📱 ${input.clientPhone}`,
+  ].join('\n');
+}
+
+export function supportPaymentConflict(input: {
+  id: number; house: House; clientPhone: string; checkIn: Date; checkOut: Date; paidCents: number;
+}): string {
+  return [
+    `⚠️ *Pix recebido, mas a data já foi ocupada — reserva #${input.id}*`,
+    ``,
+    `O cliente pagou depois que a pré-reserva expirou e outra reserva pegou as datas.`,
+    `🏠 ${input.house.code} — ${input.house.name}`,
+    `📅 ${formatBR(input.checkIn)} → ${formatBR(input.checkOut)}`,
+    `💰 Pago: ${moneyCents(input.paidCents)}`,
+    `📱 ${input.clientPhone}`,
+    ``,
+    `👉 Fale com o cliente: oferecer outras datas ou devolver o valor.`,
+  ].join('\n');
+}
+
+export const PAYMENT_CONFLICT_CLIENT =
+  `Recebemos seu Pix, mas a pré-reserva tinha expirado e as datas foram ocupadas nesse meio-tempo. 😕\n\n` +
+  `Já avisei nosso atendente: ele vai te chamar pra oferecer outras datas ou devolver o valor.`;

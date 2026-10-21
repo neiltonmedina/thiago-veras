@@ -9,7 +9,8 @@
     "build": "tsc && cp src/houses/data.json dist/houses/data.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "simulate": "SIMULATE=1 tsx src/simulate.ts"
+    "simulate": "SIMULATE=1 tsx src/simulate.ts",
+    "check:media": "tsx scripts/check-media.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",

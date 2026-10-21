@@ -1,15 +1,23 @@
 import { db } from '../db/index.js';
 
+export type ReservationStatus = 'pending' | 'confirmed' | 'cancelled' | 'expired';
+
 export type Reservation = {
   id: number;
   houseCode: string;
   checkIn: string;      // YYYY-MM-DD
-  checkOut: string;     // YYYY-MM-DD
+  checkOut: string;     // YYYY-MM-DD (exclusive)
   nights: number;
   totalCents: number;
+  depositCents: number | null;
   clientId: number | null;
   clientPhone: string;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'expired';
+  status: ReservationStatus;
+  source: 'whatsapp' | 'manual';
+  note: string | null;
+  pixTxid: string | null;
+  pixCopyPaste: string | null;
+  paidAt: number | null;
   expiresAt: number | null;
   createdAt: number;
 };
@@ -30,11 +38,26 @@ type ReservationRow = {
   check_out: string;
   nights: number;
   total_cents: number;
+  deposit_cents: number | null;
   client_id: number | null;
   client_phone: string;
-  status: Reservation['status'];
+  status: ReservationStatus;
+  source: Reservation['source'];
+  note: string | null;
+  pix_txid: string | null;
+  pix_copy_paste: string | null;
+  paid_at: number | null;
   expires_at: number | null;
   created_at: number;
+};
+
+type ClientRow = {
+  id: number;
+  phone: string;
+  name: string | null;
+  cpf: string | null;
+  created_at: number;
+  updated_at: number;
 };
 
 function fromRow(r: ReservationRow): Reservation {
@@ -45,25 +68,39 @@ function fromRow(r: ReservationRow): Reservation {
     checkOut: r.check_out,
     nights: r.nights,
     totalCents: r.total_cents,
+    depositCents: r.deposit_cents,
     clientId: r.client_id,
     clientPhone: r.client_phone,
     status: r.status,
+    source: r.source,
+    note: r.note,
+    pixTxid: r.pix_txid,
+    pixCopyPaste: r.pix_copy_paste,
+    paidAt: r.paid_at,
     expiresAt: r.expires_at,
     createdAt: r.created_at,
   };
 }
 
-/** Verifica conflito de datas com reservas ativas (pending ou confirmed) daquela casa. */
-export function hasOverlap(houseCode: string, checkIn: string, checkOut: string): boolean {
-  // Duas faixas [aIn, aOut) e [bIn, bOut) se sobrepõem sse aIn < bOut && bIn < aOut
+function clientFromRow(r: ClientRow): Client {
+  return { id: r.id, phone: r.phone, name: r.name, cpf: r.cpf, createdAt: r.created_at, updatedAt: r.updated_at };
+}
+
+/**
+ * Conflito com reservas ativas (pending ou confirmed) da casa.
+ * Faixas [aIn, aOut) e [bIn, bOut) se sobrepõem sse aIn < bOut && bIn < aOut.
+ * `ignoreId` exclui a própria reserva (útil ao confirmar um pagamento atrasado).
+ */
+export function hasOverlap(houseCode: string, checkIn: string, checkOut: string, ignoreId?: number): boolean {
   const row = db.prepare(`
     SELECT 1 FROM reservations
     WHERE house_code = ?
       AND status IN ('pending', 'confirmed')
       AND check_in < ?
       AND check_out > ?
+      AND id != ?
     LIMIT 1
-  `).get(houseCode, checkOut, checkIn);
+  `).get(houseCode, checkOut, checkIn, ignoreId ?? -1);
   return !!row;
 }
 
@@ -77,16 +114,32 @@ export function createPending(input: {
   ttlMs: number;
 }): Reservation {
   const now = Date.now();
-  const expiresAt = now + input.ttlMs;
   const result = db.prepare(`
     INSERT INTO reservations (
       house_code, check_in, check_out, nights, total_cents,
-      client_phone, status, expires_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      client_phone, status, source, expires_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 'whatsapp', ?, ?)
   `).run(
     input.houseCode, input.checkIn, input.checkOut,
-    input.nights, input.totalCents, input.clientPhone, expiresAt, now,
+    input.nights, input.totalCents, input.clientPhone, now + input.ttlMs, now,
   );
+  return getById(Number(result.lastInsertRowid))!;
+}
+
+/** Bloqueio manual de datas pelo painel (reserva feita por telefone, Airbnb, uso próprio...). */
+export function createManualBlock(input: {
+  houseCode: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  note: string;
+}): Reservation {
+  const result = db.prepare(`
+    INSERT INTO reservations (
+      house_code, check_in, check_out, nights, total_cents,
+      client_phone, status, source, note, created_at
+    ) VALUES (?, ?, ?, ?, 0, '', 'confirmed', 'manual', ?, ?)
+  `).run(input.houseCode, input.checkIn, input.checkOut, input.nights, input.note, Date.now());
   return getById(Number(result.lastInsertRowid))!;
 }
 
@@ -94,8 +147,37 @@ export function attachClient(reservationId: number, clientId: number): void {
   db.prepare(`UPDATE reservations SET client_id = ? WHERE id = ?`).run(clientId, reservationId);
 }
 
-export function markStatus(id: number, status: Reservation['status']): void {
+export function markStatus(id: number, status: ReservationStatus): void {
   db.prepare(`UPDATE reservations SET status = ?, expires_at = NULL WHERE id = ?`).run(status, id);
+}
+
+export function setPixCharge(id: number, input: { txid: string; copyPaste: string; depositCents: number }): void {
+  db.prepare(`
+    UPDATE reservations SET pix_txid = ?, pix_copy_paste = ?, deposit_cents = ? WHERE id = ?
+  `).run(input.txid, input.copyPaste, input.depositCents, id);
+}
+
+/**
+ * Marca como paga e confirmada. Atômico: só altera se ainda não estava paga,
+ * então webhook, polling e "paguei" podem disparar juntos sem confirmar duas vezes.
+ * Retorna true se esta chamada foi a que confirmou.
+ */
+export function markPaid(id: number): boolean {
+  const result = db.prepare(`
+    UPDATE reservations
+    SET status = 'confirmed', paid_at = ?, expires_at = NULL
+    WHERE id = ? AND paid_at IS NULL
+  `).run(Date.now(), id);
+  return result.changes > 0;
+}
+
+/** Registra pagamento sem confirmar (pago depois de expirar, com a data já ocupada). */
+export function recordLatePayment(id: number): boolean {
+  const result = db.prepare(`
+    UPDATE reservations SET paid_at = ?, note = 'Pago após expirar; datas já ocupadas — devolver ou remarcar'
+    WHERE id = ? AND paid_at IS NULL
+  `).run(Date.now(), id);
+  return result.changes > 0;
 }
 
 export function getById(id: number): Reservation | null {
@@ -103,49 +185,64 @@ export function getById(id: number): Reservation | null {
   return row ? fromRow(row) : null;
 }
 
-export function expirePending(now: number = Date.now()): number {
-  const result = db.prepare(`
+export function getByTxid(txid: string): Reservation | null {
+  const row = db.prepare(`SELECT * FROM reservations WHERE pix_txid = ?`).get(txid) as ReservationRow | undefined;
+  return row ? fromRow(row) : null;
+}
+
+/**
+ * Reservas com Pix gerado e ainda não pago — alvo do polling de pagamento.
+ * Inclui as expiradas nas últimas 2h pra pegar pagamento feito no último minuto.
+ */
+export function listAwaitingPayment(now: number = Date.now()): Reservation[] {
+  const rows = db.prepare(`
+    SELECT * FROM reservations
+    WHERE pix_txid IS NOT NULL AND paid_at IS NULL
+      AND (status = 'pending' OR (status = 'expired' AND expires_at > ?))
+  `).all(now - 2 * 60 * 60 * 1000) as ReservationRow[];
+  return rows.map(fromRow);
+}
+
+/** Reservas que ainda não terminaram (checkout hoje ou depois), mais as recentes. */
+export function listForAdmin(todayIso: string): Reservation[] {
+  const rows = db.prepare(`
+    SELECT * FROM reservations
+    WHERE check_out >= ? OR created_at > ?
+    ORDER BY check_in ASC, id ASC
+  `).all(todayIso, Date.now() - 7 * 24 * 60 * 60 * 1000) as ReservationRow[];
+  return rows.map(fromRow);
+}
+
+export function expirePending(now: number = Date.now()): Reservation[] {
+  const rows = db.prepare(`
     UPDATE reservations SET status = 'expired'
     WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?
-  `).run(now);
-  return result.changes;
+    RETURNING *
+  `).all(now) as ReservationRow[];
+  return rows.map(fromRow);
 }
 
 // ============ Clients ============
 
 export function upsertClient(input: { phone: string; name?: string; cpf?: string }): Client {
   const now = Date.now();
-  const existing = db.prepare(`SELECT * FROM clients WHERE phone = ?`).get(input.phone) as Client | undefined;
-  if (existing) {
-    const name = input.name ?? existing.name;
-    const cpf = input.cpf ?? existing.cpf;
-    db.prepare(`UPDATE clients SET name = ?, cpf = ?, updated_at = ? WHERE phone = ?`)
-      .run(name, cpf, now, input.phone);
-    return getClientByPhone(input.phone)!;
-  }
-  const result = db.prepare(`
+  db.prepare(`
     INSERT INTO clients (phone, name, cpf, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(phone) DO UPDATE SET
+      name = COALESCE(excluded.name, clients.name),
+      cpf = COALESCE(excluded.cpf, clients.cpf),
+      updated_at = excluded.updated_at
   `).run(input.phone, input.name ?? null, input.cpf ?? null, now, now);
-  return getClientById(Number(result.lastInsertRowid))!;
+  return getClientByPhone(input.phone)!;
 }
 
 export function getClientByPhone(phone: string): Client | null {
-  const row = db.prepare(`SELECT * FROM clients WHERE phone = ?`).get(phone) as any;
-  return row ? { ...row, createdAt: row.created_at, updatedAt: row.updated_at } : null;
+  const row = db.prepare(`SELECT * FROM clients WHERE phone = ?`).get(phone) as ClientRow | undefined;
+  return row ? clientFromRow(row) : null;
 }
 
 export function getClientById(id: number): Client | null {
-  const row = db.prepare(`SELECT * FROM clients WHERE id = ?`).get(id) as any;
-  return row ? { ...row, createdAt: row.created_at, updatedAt: row.updated_at } : null;
-}
-
-/** Reserva pendente mais recente de um cliente, se houver. */
-export function getLatestPendingByPhone(phone: string): Reservation | null {
-  const row = db.prepare(`
-    SELECT * FROM reservations
-    WHERE client_phone = ? AND status = 'pending'
-    ORDER BY created_at DESC LIMIT 1
-  `).get(phone) as ReservationRow | undefined;
-  return row ? fromRow(row) : null;
+  const row = db.prepare(`SELECT * FROM clients WHERE id = ?`).get(id) as ClientRow | undefined;
+  return row ? clientFromRow(row) : null;
 }

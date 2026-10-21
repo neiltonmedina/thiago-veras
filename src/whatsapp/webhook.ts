@@ -1,6 +1,16 @@
 import type { Request, Response } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { handleMessage } from '../conversation/handler.js';
+import { config } from '../config.js';
 import type { IncomingMessage } from '../types.js';
+
+function tokenMatches(received: unknown): boolean {
+  if (!config.webhookToken) return true;
+  if (typeof received !== 'string') return false;
+  const a = Buffer.from(received);
+  const b = Buffer.from(config.webhookToken);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 /**
  * Recebe eventos da Evolution API. Formato esperado (v2):
@@ -10,6 +20,10 @@ import type { IncomingMessage } from '../types.js';
  * Respondemos 200 imediatamente pra evitar retry, e processamos em background.
  */
 export function handleWebhook(req: Request, res: Response): void {
+  if (!tokenMatches(req.query.token)) {
+    res.status(401).send();
+    return;
+  }
   res.status(200).send();
 
   const body = req.body ?? {};

@@ -3,10 +3,15 @@ services:
     image: atendai/evolution-api:v2.2.3
     container_name: thiago-veras-evolution
     restart: unless-stopped
+    # Só localhost: o painel controla o WhatsApp e não pode ficar público.
+    # Acesse de fora com túnel SSH: ssh -L 8080:localhost:8080 ubuntu@IP
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     env_file:
       - .env
+    # Permite ao container chamar o backend que roda no host (webhook e mídias)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - evolution_instances:/evolution/instances
     depends_on:
@@ -39,7 +44,27 @@ services:
     volumes:
       - redis_data:/data
 
+  # HTTPS pro painel /admin. Opcional: docker compose --profile https up -d
+  caddy:
+    image: caddy:2-alpine
+    container_name: thiago-veras-caddy
+    profiles: ["https"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   evolution_instances:
   postgres_data:
   redis_data:
+  caddy_data:
+  caddy_config:
