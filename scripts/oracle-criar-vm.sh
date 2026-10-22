@@ -113,7 +113,7 @@ while true; do
     exit 0
   fi
 
-  if grep -qiE "capacity" <<<"$out"; then
+  if grep -qiE "capacity|capacidade" <<<"$out"; then
     log "⏳ Tentativa $attempt: sem vaga na Oracle. Tento de novo em ${RETRY_SECONDS}s."
     sleep "$RETRY_SECONDS"
   elif grep -qiE "TooManyRequests|429" <<<"$out"; then
