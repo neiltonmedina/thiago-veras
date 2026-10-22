@@ -26,7 +26,8 @@ if (( OCPUS > 4 || MEMORY_GB > 24 )); then die "Acima do limite grátis (máx 4 
 # ---------- Chave SSH (fica no Cloud Shell, nunca sai de lá) ----------
 mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
 if [[ ! -f "$KEY" ]]; then
-  ssh-keygen -t ed25519 -f "$KEY" -N "" -C "${VM_NAME}-vm" -q || die "Falha ao gerar chave SSH."
+  # RSA porque o Cloud Shell roda em modo FIPS, que recusa chaves ED25519
+  ssh-keygen -t rsa -b 4096 -f "$KEY" -N "" -C "${VM_NAME}-vm" -q || die "Falha ao gerar chave SSH."
   log "🔑 Chave SSH criada em $KEY"
 else
   log "🔑 Usando chave existente $KEY"
