@@ -5,9 +5,10 @@ import { z } from 'zod';
 // Setar SIMULATE=1 antes de rodar (ver `npm run simulate`).
 const isSimulate = process.env.SIMULATE === '1';
 if (isSimulate) {
-  process.env.EVOLUTION_API_URL ??= 'http://mock.local';
-  process.env.EVOLUTION_API_KEY ??= 'simulate-mock-key-1234567890';
-  process.env.EVOLUTION_INSTANCE ??= 'mock';
+  process.env.WHATSAPP_TOKEN ??= 'simulate-mock-token-1234567890';
+  process.env.WHATSAPP_PHONE_NUMBER_ID ??= '100000000000000';
+  process.env.WHATSAPP_VERIFY_TOKEN ??= 'simulate-verify-token';
+  process.env.WHATSAPP_APP_SECRET ??= 'simulate-app-secret-1234567890';
   process.env.GEMINI_API_KEY ??= 'simulate-mock-gemini-key-1234567890';
   process.env.SUPPORT_PHONE ??= '5586999999999';
   process.env.MEDIA_BASE_URL ??= 'http://mock.local/media';
@@ -19,14 +20,23 @@ const optional = z.string().trim().min(1).optional().catch(undefined);
 
 const schema = z.object({
   PORT: z.coerce.number().default(3000),
-  EVOLUTION_API_URL: z.string().url(),
-  EVOLUTION_API_KEY: z.string().min(8),
-  EVOLUTION_INSTANCE: z.string().min(1),
+  // Em produção o Caddy fica na frente; o backend só escuta localmente
+  HOST: z.string().default('127.0.0.1'),
+
+  // WhatsApp Cloud API (Meta). Ver README, seção "WhatsApp (Meta)".
+  WHATSAPP_TOKEN: z.string().min(20),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().regex(/^\d+$/, 'só números (Phone number ID do painel da Meta)'),
+  WHATSAPP_VERIFY_TOKEN: z.string().min(8),
+  WHATSAPP_APP_SECRET: z.string().min(16),
+  // Template aprovado pra avisar o atendente fora da janela de 24h (opcional)
+  WHATSAPP_SUPPORT_TEMPLATE: optional,
+  WHATSAPP_TEMPLATE_LANG: z.string().default('pt_BR'),
+  GRAPH_API_VERSION: z.string().regex(/^v\d+\.\d+$/).default('v23.0'),
+
   GEMINI_API_KEY: z.string().min(10),
   SUPPORT_PHONE: z.string().regex(/^\d{12,13}$/, 'formato esperado: 5586999999999'),
   MEDIA_BASE_URL: z.string().url(),
   DB_PATH: z.string().default('./data/thiago-veras.db'),
-  WEBHOOK_TOKEN: optional,
 
   ADMIN_USER: z.string().default('thiago'),
   ADMIN_PASSWORD: optional,
@@ -62,10 +72,15 @@ if (!efiConfigured && efiFields.some(Boolean)) {
 export const config = {
   simulate: isSimulate,
   port: env.PORT,
-  evolution: {
-    baseUrl: env.EVOLUTION_API_URL.replace(/\/$/, ''),
-    apiKey: env.EVOLUTION_API_KEY,
-    instance: env.EVOLUTION_INSTANCE,
+  host: env.HOST,
+  whatsapp: {
+    token: env.WHATSAPP_TOKEN,
+    phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
+    verifyToken: env.WHATSAPP_VERIFY_TOKEN,
+    appSecret: env.WHATSAPP_APP_SECRET,
+    supportTemplate: env.WHATSAPP_SUPPORT_TEMPLATE,
+    templateLang: env.WHATSAPP_TEMPLATE_LANG,
+    graphBase: `https://graph.facebook.com/${env.GRAPH_API_VERSION}`,
   },
   gemini: {
     apiKey: env.GEMINI_API_KEY,
@@ -73,7 +88,6 @@ export const config = {
   supportPhone: env.SUPPORT_PHONE,
   mediaBaseUrl: env.MEDIA_BASE_URL.replace(/\/$/, ''),
   dbPath: env.DB_PATH,
-  webhookToken: env.WEBHOOK_TOKEN,
   admin: env.ADMIN_PASSWORD ? { user: env.ADMIN_USER, password: env.ADMIN_PASSWORD } : null,
   depositPercent: env.DEPOSIT_PERCENT,
   // Pix fica ativo com credenciais da Efí completas, ou em simulação (com mock)

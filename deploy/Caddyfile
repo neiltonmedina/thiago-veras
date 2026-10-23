@@ -1,0 +1,12 @@
+# Caddy cuida do HTTPS (certificado automático) e só deixa passar o necessário.
+# O setup-vps.sh troca __DOMAIN__ pelo domínio (ou pelo IP com sslip.io).
+__DOMAIN__ {
+	# Meta: webhook de mensagens, download das fotos/vídeos e política de privacidade
+	@public path /webhook/whatsapp /media/* /privacidade /admin /admin/* /health
+	handle @public {
+		reverse_proxy 127.0.0.1:3000
+	}
+	handle {
+		respond 404
+	}
+}

@@ -1,27 +1,36 @@
 #!/usr/bin/env bash
-# Cria a VM grátis (Ampere A1) na Oracle Cloud, tentando de novo até haver vaga.
+# Cria uma VM grátis na Oracle Cloud, tentando de novo até haver vaga.
 # Rodar no Cloud Shell do console da Oracle (ícone >_ no topo), que já vem
 # autenticado na sua conta. Seguro rodar de novo: reaproveita rede e chave,
 # e para sozinho se a VM já existir.
 #
 # Uso:  bash oracle-criar-vm.sh
-# Opcional: VM_NAME=neilton OCPUS=1 MEMORY_GB=6 RETRY_SECONDS=60 bash oracle-criar-vm.sh
+#   Padrão: VM.Standard.E2.1.Micro (AMD, 1 GB, Always Free) — basta pro agente
+#   e costuma ter vaga.
+# Pra tentar a ARM maior:  SHAPE=VM.Standard.A1.Flex OCPUS=1 MEMORY_GB=6 bash oracle-criar-vm.sh
 
 set -uo pipefail
 
 VM_NAME="${VM_NAME:-neilton}"
+SHAPE="${SHAPE:-VM.Standard.E2.1.Micro}"
 OCPUS="${OCPUS:-1}"
 MEMORY_GB="${MEMORY_GB:-6}"
 RETRY_SECONDS="${RETRY_SECONDS:-60}"
-SHAPE="VM.Standard.A1.Flex"
 KEY="$HOME/.ssh/${VM_NAME}-vm"
 C="${OCI_TENANCY:?Rode este script no Cloud Shell da Oracle}"
 
 log() { echo "[$(date '+%d/%m %H:%M:%S')] $*"; }
 die() { log "❌ $*"; exit 1; }
 
-# Quota do Always Free: 4 OCPU e 24 GB somados entre todas as VMs A1
-if (( OCPUS > 4 || MEMORY_GB > 24 )); then die "Acima do limite grátis (máx 4 OCPU / 24 GB)."; fi
+case "$SHAPE" in
+  VM.Standard.E2.1.Micro) SHAPE_CONFIG=() ;;  # forma fixa: 1/8 OCPU, 1 GB
+  VM.Standard.A1.Flex)
+    # Quota do Always Free: 4 OCPU e 24 GB somados entre todas as VMs A1
+    if (( OCPUS > 4 || MEMORY_GB > 24 )); then die "Acima do limite grátis (máx 4 OCPU / 24 GB)."; fi
+    SHAPE_CONFIG=(--shape-config "{\"ocpus\":$OCPUS,\"memoryInGBs\":$MEMORY_GB}") ;;
+  *) die "Use VM.Standard.E2.1.Micro ou VM.Standard.A1.Flex (as formas grátis)." ;;
+esac
+log "🖥️  Forma: $SHAPE"
 
 # ---------- Chave SSH (fica no Cloud Shell, nunca sai de lá) ----------
 mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
@@ -89,7 +98,7 @@ for SL in $(oci network subnet get --subnet-id "$SUBNET" | jq -r '.data."securit
     && log "🔓 Portas 80 e 443 liberadas." || log "⚠️  Não consegui liberar 80/443 — faça pelo console depois."
 done
 
-# ---------- Imagem: Ubuntu 24.04 ARM, versão mais recente, sem "Minimal" ----------
+# ---------- Imagem: Ubuntu 24.04 compatível com a forma, mais recente, sem "Minimal" ----------
 IMG=$(oci compute image list -c "$C" --operating-system "Canonical Ubuntu" --operating-system-version "24.04" \
       --shape "$SHAPE" --sort-by TIMECREATED --sort-order DESC --all \
       | jq -r '[.data[] | select(."display-name" | test("Minimal") | not)][0].id // empty')
@@ -101,7 +110,7 @@ attempt=0
 while true; do
   attempt=$((attempt + 1))
   out=$(oci compute instance launch -c "$C" --availability-domain "$AD" --display-name "$VM_NAME" \
-        --shape "$SHAPE" --shape-config "{\"ocpus\":$OCPUS,\"memoryInGBs\":$MEMORY_GB}" \
+        --shape "$SHAPE" "${SHAPE_CONFIG[@]}" \
         --image-id "$IMG" --subnet-id "$SUBNET" --assign-public-ip true \
         --ssh-authorized-keys-file "$KEY.pub" 2>&1)
 

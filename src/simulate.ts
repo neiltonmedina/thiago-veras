@@ -2,7 +2,7 @@
  * Modo simulação — testa fluxos do bot sem chip, Gemini nem Efí reais.
  * Roda com: `npm run simulate`
  *
- * Cada cenário simula uma conversa. Os envios da Evolution API viram
+ * Cada cenário simula uma conversa. Os envios pela API do WhatsApp viram
  * console.log, a classificação usa o fallback por keyword, o Pix usa um
  * provedor falso e o SQLite roda em memória (cada rodada começa limpa).
  *

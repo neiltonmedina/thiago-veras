@@ -4,7 +4,7 @@ import { matchHouse } from './matcher.js';
 import { classify } from '../ai/gemini.js';
 import { getState, setState, resetState } from './state.js';
 import * as msg from './messages.js';
-import { sendText, sendImage, sendVideo } from '../whatsapp/evolution.js';
+import { sendText, sendImage, sendVideo, sendNotice } from '../whatsapp/client.js';
 import { config } from '../config.js';
 import { parseDateRange, fromIsoDate } from '../dates/parser.js';
 import { parseClientData } from '../reservations/clientData.js';
@@ -313,7 +313,8 @@ function absoluteMediaUrl(pathOrUrl: string): string {
 async function notifySupport(from: string, message: string): Promise<void> {
   if (from === config.supportPhone) return;
   try {
-    await sendText(config.supportPhone, message);
+    // O atendente pode não ter falado com o bot nas últimas 24h: vai como aviso (template)
+    await sendNotice(config.supportPhone, message);
   } catch (err) {
     console.error('[notifySupport] falhou:', err);
   }

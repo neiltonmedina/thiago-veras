@@ -4,14 +4,18 @@ Agente de WhatsApp que atende 24h os clientes das casas de temporada do Thiago
 no litoral do Piauí: apresenta as casas com fotos e vídeo, consulta datas, faz a
 pré-reserva e cobra o sinal por Pix, confirmando sozinho quando o pagamento cai.
 
+Usa a **API oficial do WhatsApp (Cloud API, da Meta)**: sem risco de banimento do
+número, sem QR Code pra reconectar, e leve o bastante pra rodar na VM grátis de
+1 GB da Oracle.
+
 ## Status
 
 - [x] **Fase 1** — Apresentação das casas (código, nome ou local em linguagem natural)
 - [x] **Fase 2** — Datas em português, disponibilidade, pré-reserva com nome e CPF
 - [x] **Fase 3** — Pix automático do sinal via Efí + painel `/admin` pro Thiago
-- [ ] **Lançamento** — chip do WhatsApp, VM na Oracle, fotos e dados reais das casas
+- [ ] **Lançamento** — VM, app da Meta com o número do negócio, fotos e dados reais
 
-## Testar sem chip, sem servidor e sem chaves
+## Testar sem nada configurado
 
 ```bash
 npm install
@@ -19,36 +23,38 @@ npm run simulate
 ```
 
 Roda 20 conversas de ponta a ponta (reserva, Pix, "paguei", expiração, conflito
-de datas, bloqueio pelo painel) e mostra o que o bot responderia. Nada sai do
-computador: WhatsApp, Gemini e Pix são simulados e o banco fica em memória.
+de datas, bloqueio pelo painel). WhatsApp, Gemini e Pix são simulados e o banco
+fica em memória.
 
-## Stack
+## Stack e custos
 
 | Camada | Ferramenta | Custo mensal |
 |---|---|---|
-| Servidor | Oracle Cloud Free Tier (VM ARM) | R$ 0 |
-| WhatsApp | Evolution API (Docker, self-hosted) | R$ 0 |
-| Backend | Node.js 22 + TypeScript | R$ 0 |
+| Servidor | Oracle Cloud Always Free (VM.Standard.E2.1.Micro, 1 GB) | R$ 0 |
+| WhatsApp | Cloud API oficial da Meta | R$ 0 pra responder clientes* |
+| Backend | Node.js 22 + TypeScript, SQLite | R$ 0 |
+| HTTPS | Caddy + domínio sslip.io (ou próprio) | R$ 0 |
 | IA da conversa | Google Gemini 2.5 Flash (cota grátis) | R$ 0 |
-| Banco | SQLite (arquivo local) | R$ 0 |
 | Pix | Efí | tarifa por Pix recebido |
+
+\* Mensagens em resposta ao cliente, dentro da janela de 24h desde a última
+mensagem dele, são grátis. Avisos fora dessa janela (template) são cobrados pela
+Meta, centavos por mensagem, e exigem forma de pagamento na conta do WhatsApp
+Business. Confira a tabela atual em developers.facebook.com.
 
 ## Como funciona
 
 ```
 Cliente no WhatsApp
-   ↓
-Evolution API (Docker, só localhost:8080)
-   ↓ webhook http://host.docker.internal:3000/webhook/messages?token=…
-Backend Node (porta 3000, fechada pra internet)
-   ├─ conversa: matcher de casas, Gemini, parser de datas, estado da conversa
+   ↓ (Meta)
+https://SEU-DOMINIO/webhook/whatsapp   ← assinatura HMAC conferida
+   ↓ Caddy (HTTPS, portas 80/443)
+Backend Node (127.0.0.1:3000)
+   ├─ conversa: matcher de casas, Gemini, datas em português, estado da conversa
    ├─ reservas: SQLite, conflito de datas, pré-reserva de 30 min
    ├─ Pix: cobra o sinal na Efí, confere a cada minuto e quando o cliente diz "paguei"
-   └─ painel /admin ← Caddy com HTTPS (portas 80/443)
+   └─ painel /admin
 ```
-
-O pagamento é confirmado por **consulta periódica** à Efí, não por webhook. Assim
-o Pix funciona sem precisar de domínio e certificado só pra isso.
 
 ### O que o bot faz sozinho
 
@@ -66,100 +72,126 @@ o Pix funciona sem precisar de domínio e certificado só pra isso.
 
 Feito pro celular. Login com `ADMIN_USER` / `ADMIN_PASSWORD`.
 
-- Lista reservas aguardando pagamento, confirmadas e o histórico recente
-- **Confirmar** (pagamento por fora do Pix) e **Cancelar**, avisando o cliente no WhatsApp
-- **Bloquear datas**: reservas feitas pelo Airbnb, telefone ou uso próprio. Sem isso o bot pode vender uma data já ocupada em outro canal.
+- Reservas aguardando pagamento, confirmadas e histórico recente
+- **Confirmar** e **Cancelar**, avisando o cliente no WhatsApp
+- **Bloquear datas** de reservas feitas por outros canais (Airbnb, telefone, uso
+  próprio), pra o bot não vender data ocupada
 
-## Deploy na Oracle Cloud
+## Deploy
 
-### 1. VM
+### 1. Criar a VM na Oracle (Cloud Shell)
 
-Na Oracle: Compute → Instances → Create instance, **Ubuntu 22.04**, shape
-**VM.Standard.A1.Flex** (2 OCPU / 12 GB basta), IP público, baixe a chave SSH.
-Na Security List da subnet, libere as portas **80 e 443**. Não libere 3000 nem 8080.
-
-### 2. Provisionar
+No console da Oracle, abra o Cloud Shell (ícone `>_`), envie
+`scripts/oracle-criar-vm.sh` (menu Ações → Upload) e rode:
 
 ```bash
-ssh -i chave.key ubuntu@IP_DA_VM
-curl -fsSL https://raw.githubusercontent.com/neiltonmedina/thiago-veras/main/scripts/setup-vps.sh | sudo bash
+nohup bash oracle-criar-vm.sh > criar-vm.log 2>&1 & tail -f criar-vm.log
 ```
 
-Instala Docker, Node 22 e o repo em `/opt/thiago-veras`, ajusta o firewall da
-imagem da Oracle e cria o serviço `thiago-veras` no systemd.
+Ele cria a rede, libera as portas 80/443, gera a chave SSH dentro do Cloud Shell
+e tenta criar a VM `VM.Standard.E2.1.Micro` até conseguir. No fim mostra o IP.
 
-### 3. Configurar
+### 2. Token de leitura do GitHub
+
+O repositório é privado. Em github.com → Settings → Developer settings →
+**Fine-grained tokens** → Generate new token:
+- Repository access: **Only select repositories** → `thiago-veras`
+- Permissions → Repository → **Contents: Read-only**
+
+Guarde o token (começa com `github_pat_`). Não cole em chat nem em arquivos do repositório.
+
+### 3. Instalar
+
+Do Cloud Shell, entre na VM e rode a instalação:
 
 ```bash
-cd /opt/thiago-veras
-sudo -u thiagoveras cp .env.example .env && sudo -u thiagoveras nano .env
-sudo -u thiagoveras cp docker/.env.example docker/.env && sudo -u thiagoveras nano docker/.env
+ssh -i ~/.ssh/neilton-vm ubuntu@IP_DA_VM
+export GITHUB_TOKEN=github_pat_...   # o token do passo 2
+curl -fsSL -H "Authorization: token $GITHUB_TOKEN" \
+  https://raw.githubusercontent.com/neiltonmedina/thiago-veras/main/scripts/setup-vps.sh | sudo -E bash
 ```
 
-Gere segredos com `openssl rand -hex 24` para `AUTHENTICATION_API_KEY`
-(igual em `EVOLUTION_API_KEY`), `WEBHOOK_TOKEN` e `ADMIN_PASSWORD`.
+Instala Node 22, Caddy (HTTPS automático), swap de 2 GB, atualizações automáticas
+de segurança, backup diário do banco, firewall (só 22, 80 e 443) e o serviço
+`thiago-veras`. O domínio padrão é o IP com sslip.io, ex.: `129-151-40-12.sslip.io`.
 
-Sem domínio próprio, use o IP da VM com sslip.io em `DOMAIN`:
-o IP `129.151.40.12` vira `129-151-40-12.sslip.io`.
+Pra instalar de outra branch: `... | sudo -E REPO_BRANCH=nome-da-branch bash`.
 
-### 4. Subir
+### 4. Configurar e ligar
 
 ```bash
-cd /opt/thiago-veras/docker && sudo -u thiagoveras docker compose --profile https up -d
-cd /opt/thiago-veras && sudo -u thiagoveras npm ci && sudo -u thiagoveras npm run build
-sudo systemctl enable --now thiago-veras
-curl http://localhost:3000/health
+sudo -u thiagoveras nano /opt/thiago-veras/.env    # ver seção "WhatsApp (Meta)"
+sudo systemctl start thiago-veras
+curl https://SEU-DOMINIO/health
 ```
-
-O painel fica em `https://SEU-DOMINIO/admin`.
-
-### 5. Conectar o WhatsApp (precisa do chip)
-
-O painel do Evolution não fica exposto. Acesse por túnel SSH, do seu computador:
-
-```bash
-ssh -i chave.key -L 8080:localhost:8080 ubuntu@IP_DA_VM
-```
-
-Abra `http://localhost:8080/manager`, crie a instance `anfitriao`, escaneie o QR
-Code com o WhatsApp do chip e configure o webhook:
-
-- URL: `http://host.docker.internal:3000/webhook/messages?token=SEU_WEBHOOK_TOKEN`
-- Evento: `MESSAGES_UPSERT`
 
 ### Atualizar depois
 
 ```bash
-cd /opt/thiago-veras && sudo -u thiagoveras git pull
-sudo -u thiagoveras npm ci && sudo -u thiagoveras npm run build
+cd /opt/thiago-veras && sudo -H -u thiagoveras git pull
+sudo -H -u thiagoveras npm ci && sudo -H -u thiagoveras npm run build
 sudo systemctl restart thiago-veras
 ```
 
-### Backup
+Logs: `sudo journalctl -u thiago-veras -f`
 
-Todas as reservas ficam em `data/thiago-veras.db`. Copie esse arquivo
-periodicamente pra fora da VM.
+### Monitoramento
+
+Cadastre `https://SEU-DOMINIO/health` num monitor gratuito (ex.: UptimeRobot)
+pra receber alerta se o bot sair do ar.
+
+## WhatsApp (Meta)
+
+O número do chip fica dedicado à API: **não pode estar ativo no app WhatsApp**.
+Se já estiver, apague a conta do WhatsApp nesse número antes.
+
+1. **Portfólio empresarial:** crie em business.facebook.com.
+2. **App:** developers.facebook.com → Meus apps → Criar app → caso de uso de
+   **WhatsApp** (conectar-se com clientes) → vincule ao portfólio.
+3. **Número de teste (opcional, pra testar já):** em WhatsApp → Configuração da
+   API há um número de teste. Adicione seu celular como destinatário.
+4. **Número do negócio:** WhatsApp → Configuração da API → Adicionar número →
+   confirme por SMS ou ligação e defina o nome de exibição.
+5. **Anote o Phone number ID** (é um ID, não o telefone) → `WHATSAPP_PHONE_NUMBER_ID`.
+6. **Token permanente:** Configurações do negócio → Usuários do sistema →
+   Adicionar (admin) → Adicionar ativos (o app e a conta do WhatsApp) →
+   Gerar token com `whatsapp_business_messaging` e `whatsapp_business_management`,
+   expiração **Nunca** → `WHATSAPP_TOKEN`.
+7. **App Secret:** Configurações do app → Básico → `WHATSAPP_APP_SECRET`.
+8. **Webhook:** WhatsApp → Configuração → URL de callback
+   `https://SEU-DOMINIO/webhook/whatsapp`, token de verificação igual ao
+   `WHATSAPP_VERIFY_TOKEN` → Verificar e salvar → assine o campo **messages**.
+   O agente precisa estar ligado nessa hora.
+9. **Modo ao vivo:** Configurações do app → Básico → URL da política de
+   privacidade `https://SEU-DOMINIO/privacidade` → mude o app pra **Ao vivo**.
+10. **Template de aviso (opcional):** WhatsApp Manager → Modelos de mensagem →
+    Criar → categoria **Utilidade**, nome `aviso_atendente`, idioma Português (BR),
+    corpo `Aviso do sistema de reservas: {{1}}`. Depois de aprovado, coloque
+    `WHATSAPP_SUPPORT_TEMPLATE=aviso_atendente`.
+
+Sem o template, os avisos pro Thiago vão como texto e **só chegam se ele tiver
+mandado mensagem pro número do bot nas últimas 24h**. O painel `/admin` mostra
+tudo de qualquer forma.
+
+Os nomes dos menus da Meta mudam com frequência; a referência é
+developers.facebook.com/docs/whatsapp/cloud-api.
 
 ## Pix (Efí)
 
 1. O Thiago abre uma conta na Efí (app Efí Bank) e cadastra uma chave Pix.
 2. No painel da Efí, em **API → Aplicações**, cria uma aplicação com os escopos
-   de cobrança Pix (`cob.write`, `cob.read`) e anota Client ID e Client Secret
-   de **produção**.
+   de cobrança Pix (`cob.write`, `cob.read`) e anota Client ID e Client Secret de **produção**.
 3. Em **API → Meus Certificados**, gera o certificado de **produção** e baixa o `.p12`.
-4. Copie o `.p12` pra VM em `/opt/thiago-veras/certs/` (a pasta fica fora do git).
+4. Copie o `.p12` pra VM em `/opt/thiago-veras/certs/` (fora do git).
 5. Preencha `EFI_CLIENT_ID`, `EFI_CLIENT_SECRET`, `EFI_CERT_PATH` e `EFI_PIX_KEY`
    no `.env` e reinicie o serviço.
 
-Os nomes dos menus podem mudar. A referência é a documentação oficial:
-https://dev.efipay.com.br/docs/api-pix/credenciais
-
-Pra testar sem dinheiro real, use credenciais e certificado de **homologação**
-com `EFI_SANDBOX=true`.
+Referência: https://dev.efipay.com.br/docs/api-pix/credenciais. Pra testar sem
+dinheiro real, use credenciais de homologação com `EFI_SANDBOX=true`.
 
 ## Casas e fotos
 
-- Dados das casas: `src/houses/data.json` (nome, local, quartos, preço, comodidades, palavras-chave)
+- Dados das casas: `src/houses/data.json`
 - Fotos e vídeos: `media/<código>/` — veja `media/README.md`
 - Conferir: `npm run check:media`
 
@@ -173,7 +205,8 @@ src/
 ├── index.ts               servidor, jobs de expiração e de pagamento
 ├── config.ts              variáveis de ambiente validadas (zod)
 ├── simulate.ts            20 cenários de teste
-├── whatsapp/              cliente da Evolution API e webhook
+├── privacy.ts             política de privacidade (exigida pela Meta)
+├── whatsapp/              cliente da Cloud API e webhook
 ├── conversation/          handler, matcher, mensagens, estado
 ├── ai/gemini.ts           classificação de intenção (+ fallback sem IA)
 ├── dates/parser.ts        datas em português
@@ -181,7 +214,7 @@ src/
 ├── reservations/          regras de reserva, ciclo de vida, CPF
 ├── pix/provider.ts        Efí (OAuth + certificado) e provedor simulado
 └── admin/                 painel /admin
-docker/                    Evolution, Postgres, Redis, Caddy
-scripts/                   setup da VM e conferência de mídia
+deploy/Caddyfile           HTTPS e rotas públicas
+scripts/                   criação da VM, instalação e conferência de mídia
 media/                     fotos e vídeos das casas
 ```

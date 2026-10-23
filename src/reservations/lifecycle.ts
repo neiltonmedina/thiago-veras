@@ -7,7 +7,7 @@ import type { House } from '../types.js';
 import { config } from '../config.js';
 import { getCatalog } from '../houses/catalog.js';
 import * as msg from '../conversation/messages.js';
-import { sendText, sendImageBase64 } from '../whatsapp/evolution.js';
+import { sendText, sendImageBase64, sendNotice } from '../whatsapp/client.js';
 import { pixProvider } from '../pix/provider.js';
 import { fromIsoDate, nightsBetween } from '../dates/parser.js';
 import * as store from './store.js';
@@ -22,10 +22,16 @@ async function houseOf(r: Reservation): Promise<House | null> {
   return catalog.find(h => h.code === r.houseCode) ?? null;
 }
 
-async function notify(to: string, text: string): Promise<void> {
+/**
+ * Mensagens pro atendente, ou disparadas pelo painel (às vezes dias depois),
+ * podem cair fora da janela de 24h do WhatsApp: vão como aviso (template).
+ * As demais respondem a um cliente que acabou de conversar e vão como texto.
+ */
+async function notify(to: string, text: string, opts: { outsideWindow?: boolean } = {}): Promise<void> {
   if (!to) return;
   try {
-    await sendText(to, text);
+    if (opts.outsideWindow || to === config.supportPhone) await sendNotice(to, text);
+    else await sendText(to, text);
   } catch (err) {
     console.error(`[notify] falhou pra ${to}:`, err);
   }
@@ -161,7 +167,7 @@ export async function confirmManually(id: number): Promise<ActionResult> {
       checkIn: fromIsoDate(r.checkIn), checkOut: fromIsoDate(r.checkOut),
       totalCents: r.totalCents,
       paidCents: r.paidAt ? (r.depositCents ?? r.totalCents) : null,
-    }));
+    }), { outsideWindow: true });
   }
   return { ok: true, message: `Reserva #${id} confirmada e cliente avisado.` };
 }
@@ -173,7 +179,9 @@ export async function cancelReservation(id: number): Promise<ActionResult> {
   store.markStatus(id, 'cancelled');
 
   const house = await houseOf(r);
-  if (house && r.source === 'whatsapp') await notify(r.clientPhone, msg.reservationCancelled(id, house));
+  if (house && r.source === 'whatsapp') {
+    await notify(r.clientPhone, msg.reservationCancelled(id, house), { outsideWindow: true });
+  }
   const refund = r.paidAt ? ' Atenção: essa reserva tinha Pix pago — faça a devolução pelo app do banco.' : '';
   return { ok: true, message: `Reserva #${id} cancelada.${refund}` };
 }

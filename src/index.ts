@@ -2,22 +2,27 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { config } from './config.js';
-import { handleWebhook } from './whatsapp/webhook.js';
+import { handleWebhook, verifyWebhook } from './whatsapp/webhook.js';
 import { closeDb } from './db/index.js';
 import { expireAndNotify, pollPayments } from './reservations/lifecycle.js';
 import { adminRouter } from './admin/routes.js';
+import { privacyPage } from './privacy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '10mb' }));
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'thiago-veras', ts: new Date().toISOString() });
 });
 
-app.post('/webhook/messages', handleWebhook);
+app.get('/privacidade', privacyPage);
+
+// WhatsApp Cloud API: GET pra verificação do webhook, POST com corpo cru
+// (a assinatura HMAC da Meta é calculada sobre os bytes exatos recebidos)
+app.get('/webhook/whatsapp', verifyWebhook);
+app.post('/webhook/whatsapp', express.raw({ type: 'application/json', limit: '1mb' }), handleWebhook);
 
 app.use('/admin', adminRouter);
 
@@ -50,9 +55,10 @@ const timers = [
   ...(config.pix ? [every(60_000, 'pix', pollPayments)] : []),
 ];
 
-const server = app.listen(config.port, () => {
-  console.log(`✅ thiago-veras escutando em http://localhost:${config.port}`);
-  console.log(`   webhook: POST /webhook/messages${config.webhookToken ? ' (com token)' : ''}`);
+const server = app.listen(config.port, config.host, () => {
+  console.log(`✅ thiago-veras escutando em http://${config.host}:${config.port}`);
+  console.log(`   webhook: /webhook/whatsapp (WhatsApp Cloud API, número ${config.whatsapp.phoneNumberId})`);
+  console.log(`   avisos:  ${config.whatsapp.supportTemplate ? `template "${config.whatsapp.supportTemplate}"` : 'texto livre (configure WHATSAPP_SUPPORT_TEMPLATE pra avisos fora da janela de 24h)'}`);
   console.log(`   painel:  ${config.admin ? 'GET /admin' : 'desligado (defina ADMIN_PASSWORD)'}`);
   console.log(`   pix:     ${config.pix ? `${config.pix.mode}${config.pix.mode === 'efi' && config.pix.sandbox ? ' (sandbox)' : ''}, sinal ${config.depositPercent}%` : 'desligado (pagamento combinado com atendente)'}`);
   console.log(`   db:      ${config.dbPath}`);
