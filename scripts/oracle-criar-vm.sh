@@ -42,13 +42,33 @@ else
   log "🔑 Usando chave existente $KEY"
 fi
 
+# A placa de rede (VNIC) só aparece alguns instantes depois do RUNNING: espera até 5 min.
+wait_public_ip() {
+  local id="$1" ip
+  for _ in $(seq 1 30); do
+    ip=$(oci compute instance list-vnics --instance-id "$id" 2>/dev/null | jq -r '.data[0]."public-ip" // empty')
+    if [[ -n "$ip" ]]; then echo "$ip"; return 0; fi
+    sleep 10
+  done
+  return 1
+}
+
+show_access() {
+  local ip
+  if ip=$(wait_public_ip "$1"); then
+    log "🌐 IP público: $ip"
+    log "👉 Pra entrar:  ssh -i $KEY ubuntu@$ip"
+  else
+    log "⚠️  A VM existe mas ainda não tem IP público. Rode o script de novo em alguns minutos."
+  fi
+}
+
 # ---------- VM já existe? ----------
 existing=$(oci compute instance list -c "$C" --all 2>/dev/null \
   | jq -r --arg n "$VM_NAME" '[.data[]? | select(."display-name"==$n and (."lifecycle-state"|IN("RUNNING","PROVISIONING","STARTING")))][0].id // empty')
 if [[ -n "$existing" ]]; then
-  log "✅ A VM \"$VM_NAME\" já existe ($existing). Nada a fazer."
-  ip=$(oci compute instance list-vnics --instance-id "$existing" | jq -r '.data[0]."public-ip" // "sem IP público"')
-  log "🌐 IP público: $ip"
+  log "✅ A VM \"$VM_NAME\" já existe. Nada a criar."
+  show_access "$existing"
   exit 0
 fi
 
@@ -117,9 +137,8 @@ while true; do
   if id=$(jq -er '.data.id' <<<"$out" 2>/dev/null); then
     log "🎉 VM criada na tentativa $attempt! Aguardando ligar..."
     oci compute instance get --instance-id "$id" --wait-for-state RUNNING >/dev/null
-    ip=$(oci compute instance list-vnics --instance-id "$id" | jq -r '.data[0]."public-ip"')
-    log "✅ VM \"$VM_NAME\" rodando. IP público: $ip"
-    log "👉 Pra entrar:  ssh -i $KEY ubuntu@$ip"
+    log "✅ VM \"$VM_NAME\" rodando."
+    show_access "$id"
     exit 0
   fi
 
