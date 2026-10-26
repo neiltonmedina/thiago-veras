@@ -11,6 +11,7 @@
  */
 import { handleMessage } from './conversation/handler.js';
 import { resetState } from './conversation/state.js';
+import { config } from './config.js';
 import { mockPay } from './pix/provider.js';
 import * as store from './reservations/store.js';
 import { pollPayments, expireAndNotify, blockDates, confirmManually } from './reservations/lifecycle.js';
@@ -35,11 +36,11 @@ function pay(phone: string): Action {
 
 const poll: Action = { label: 'job de pagamentos roda (a cada 1 min)', run: async () => { await pollPayments(); } };
 
-/** Simula 31 minutos passando: vence as pré-reservas em aberto. */
+/** Simula o prazo da pré-reserva (+1 min) passando: vence as pré-reservas em aberto. */
 const timePasses: Action = {
-  label: 'passam 31 minutos (job de expiração roda)',
+  label: 'passa o prazo da pré-reserva (job de expiração roda)',
   run: async () => {
-    const later = Date.now() + 31 * 60 * 1000;
+    const later = Date.now() + (config.holdMinutes + 1) * 60 * 1000;
     const realNow = Date.now;
     Date.now = () => later;
     try {

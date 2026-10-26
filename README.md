@@ -51,7 +51,7 @@ https://SEU-DOMINIO/webhook/whatsapp   ← assinatura HMAC conferida
    ↓ Caddy (HTTPS, portas 80/443)
 Backend Node (127.0.0.1:3000)
    ├─ conversa: matcher de casas, Gemini, datas em português, estado da conversa
-   ├─ reservas: SQLite, conflito de datas, pré-reserva de 30 min
+   ├─ reservas: SQLite, conflito de datas, pré-reserva com prazo (`HOLD_MINUTES`, padrão 30 min)
    ├─ Pix: cobra o sinal na Efí, confere a cada minuto e quando o cliente diz "paguei"
    └─ painel /admin
 ```
@@ -63,7 +63,7 @@ Backend Node (127.0.0.1:3000)
 | Cliente fecha a pré-reserva | Gera Pix do sinal (`DEPOSIT_PERCENT`, padrão 50%), envia QR + copia e cola, avisa o Thiago |
 | Pix cai | Confirma a reserva e avisa cliente e Thiago |
 | Cliente diz "paguei" | Consulta a Efí na hora |
-| 30 min sem pagamento | Libera a data e avisa o cliente |
+| Prazo (`HOLD_MINUTES`) sem pagamento | Libera a data e avisa o cliente |
 | Pagou depois de expirar, data livre | Confirma normalmente |
 | Pagou depois de expirar, data já ocupada | Não confirma; avisa o Thiago pra remarcar ou devolver |
 | Efí fora do ar ou Pix desligado | Pré-reserva normal; Thiago combina o pagamento e confirma no painel |

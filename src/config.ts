@@ -42,6 +42,8 @@ const schema = z.object({
   ADMIN_PASSWORD: optional,
 
   DEPOSIT_PERCENT: z.coerce.number().int().min(1).max(100).default(50),
+  // Quanto tempo a data fica segura antes de a pré-reserva expirar sem pagamento
+  HOLD_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
 
   EFI_CLIENT_ID: optional,
   EFI_CLIENT_SECRET: optional,
@@ -90,6 +92,7 @@ export const config = {
   dbPath: env.DB_PATH,
   admin: env.ADMIN_PASSWORD ? { user: env.ADMIN_USER, password: env.ADMIN_PASSWORD } : null,
   depositPercent: env.DEPOSIT_PERCENT,
+  holdMinutes: env.HOLD_MINUTES,
   // Pix fica ativo com credenciais da Efí completas, ou em simulação (com mock)
   pix: isSimulate
     ? { mode: 'mock' as const }

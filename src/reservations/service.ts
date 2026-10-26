@@ -1,9 +1,10 @@
 import type { House } from '../types.js';
 import type { DateRange } from '../dates/parser.js';
 import { toIsoDate, nightsBetween } from '../dates/parser.js';
+import { config } from '../config.js';
 import * as store from './store.js';
 
-export const PENDING_TTL_MS = 30 * 60 * 1000; // 30 minutos
+export const PENDING_TTL_MS = config.holdMinutes * 60 * 1000;
 
 export type Availability =
   | { available: true; nights: number; totalCents: number }

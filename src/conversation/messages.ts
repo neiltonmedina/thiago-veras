@@ -1,11 +1,21 @@
 import type { House } from '../types.js';
 import { formatBR } from '../dates/parser.js';
 import { formatCpf } from '../reservations/clientData.js';
+import { config } from '../config.js';
 
 const brl = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const brlCents = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 function money(v: number): string { return `R$ ${brl.format(v)}`; }
 function moneyCents(cents: number): string { return `R$ ${brlCents.format(cents / 100)}`; }
+
+/** Prazo da pré-reserva em texto: "30 minutos", "3 horas", "1h30". */
+function holdLabel(): string {
+  const m = config.holdMinutes;
+  if (m < 60) return `${m} minutos`;
+  const h = Math.floor(m / 60), r = m % 60;
+  if (r) return `${h}h${String(r).padStart(2, '0')}`;
+  return h === 1 ? '1 hora' : `${h} horas`;
+}
 
 export function greeting(catalog: House[]): string {
   const list = catalog.slice(0, 5).map(h =>
@@ -130,7 +140,7 @@ export function reservationConfirmed(input: {
     `📄 CPF ${formatCpf(input.clientCpf)}`,
     `💰 Total: *${moneyCents(input.totalCents)}*`,
     ``,
-    `⏰ Segurei essa data por *30 minutos*. Um atendente vai te chamar pra combinar o pagamento e confirmar.`,
+    `⏰ Segurei essa data por *${holdLabel()}*. O Thiago vai te chamar aqui mesmo, em instantes, pra enviar o Pix e os detalhes da reserva.`,
   ].join('\n');
 }
 
@@ -147,8 +157,8 @@ export function reservationNotifySupport(input: {
   depositCents?: number;
 }): string {
   const payment = input.depositCents
-    ? `⏰ Pix do sinal (${moneyCents(input.depositCents)}) enviado. Confirmo sozinho quando cair; expira em 30 min.`
-    : `⏰ Combine o pagamento com o cliente. Expira em 30 min se não for confirmada no painel.`;
+    ? `⏰ Pix do sinal (${moneyCents(input.depositCents)}) enviado. Confirmo sozinho quando cair; expira em ${holdLabel()}.`
+    : `⏰ Chame o cliente, envie o Pix e os detalhes. Depois confirme no painel. Sem confirmação, a data é liberada em ${holdLabel()}.`;
   return [
     `📩 *Nova pré-reserva #${input.id}*`,
     ``,
@@ -188,7 +198,7 @@ export function reservationAwaitingPix(input: {
       ? `💳 Pagamento via Pix: *${moneyCents(input.depositCents)}*`
       : `💳 Sinal (${input.depositPercent}%) via Pix: *${moneyCents(input.depositCents)}*`,
     ``,
-    `⏰ Segurei a data por *30 minutos*. Pague pelo QR Code ou pelo código *copia e cola* abaixo.`,
+    `⏰ Segurei a data por *${holdLabel()}*. Pague pelo QR Code ou pelo código *copia e cola* abaixo.`,
     `Assim que o Pix cair, confirmo sua reserva automaticamente. 🙌`,
   ].join('\n');
 }
@@ -224,7 +234,7 @@ export const PAYMENT_NOT_FOUND_YET =
 
 export function reservationExpired(id: number, house: House): string {
   return [
-    `⏰ A pré-reserva #${id} da *${house.name}* expirou porque o pagamento não foi identificado em 30 minutos.`,
+    `⏰ A pré-reserva #${id} da *${house.name}* expirou porque o pagamento não foi identificado em ${holdLabel()}.`,
     ``,
     `Se ainda quiser, me mande as datas de novo que eu verifico a disponibilidade. Se você *já pagou*, digite *atendente*.`,
   ].join('\n');
