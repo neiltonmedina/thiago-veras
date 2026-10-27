@@ -32,7 +32,7 @@ const day = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: 
 const weekday = (d: Date) => d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
 
 const STATUS: Record<Reservation['status'], { label: string; cls: string }> = {
-  pending: { label: 'Aguardando pagamento', cls: 'warn' },
+  pending: { label: 'Datas seguras, aguardando pagamento', cls: 'warn' },
   confirmed: { label: 'Confirmada', cls: 'ok' },
   expired: { label: 'Expirada', cls: 'muted' },
   cancelled: { label: 'Cancelada', cls: 'muted' },
@@ -42,22 +42,29 @@ function card(item: AdminItem): string {
   const { r } = item;
   const st = r.source === 'manual' ? { label: 'Bloqueio manual', cls: 'block' } : STATUS[r.status];
   const nights = r.nights === 1 ? '1 diária' : `${r.nights} diárias`;
+  const left = r.status === 'pending' && r.expiresAt ? Math.max(0, Math.round((r.expiresAt - Date.now()) / 60000)) : null;
 
   const payment = r.source === 'manual' ? '' : [
-    `<span>Total ${money(r.totalCents)}</span>`,
+    r.totalCents > 0 ? `<span>Total ${money(r.totalCents)}</span>` : '',
     r.depositCents != null
       ? `<span>${r.paidAt ? '✅' : '⏳'} Sinal ${money(r.depositCents)} ${r.paidAt ? 'pago' : 'via Pix'}</span>`
       : '',
   ].join('');
 
+  const contact = r.clientPhone
+    ? `<a href="https://wa.me/${esc(r.clientPhone)}" target="_blank" rel="noopener">WhatsApp ${esc(r.clientPhone)}</a>`
+    : `<span class="note" style="margin:0">Sem WhatsApp informado, o cliente chama você pela conversa.</span>`;
+  const origin = r.source === 'site' ? '<span class="note" style="margin:0">Pedido feito pelo site</span>' : '';
+  const guests = r.guests ? `<span class="note" style="margin:0">${r.guests} ${r.guests === 1 ? 'pessoa' : 'pessoas'}</span>` : '';
+
   const who = r.source === 'manual'
     ? `<p class="note">${esc(r.note)}</p>`
     : `<p class="who">
         <strong>${esc(item.clientName ?? 'Cliente sem nome')}</strong>
-        <a href="https://wa.me/${esc(r.clientPhone)}" target="_blank" rel="noopener">WhatsApp ${esc(r.clientPhone)}</a>
+        ${contact}${guests}${origin}
       </p>${r.note ? `<p class="note">⚠️ ${esc(r.note)}</p>` : ''}`;
 
-  const canConfirm = r.source === 'whatsapp' && (r.status === 'pending' || r.status === 'expired');
+  const canConfirm = r.source !== 'manual' && (r.status === 'pending' || r.status === 'expired');
   const canCancel = r.status === 'pending' || r.status === 'confirmed';
   const cancelLabel = r.source === 'manual' ? 'Liberar datas' : 'Cancelar';
 
@@ -76,6 +83,7 @@ function card(item: AdminItem): string {
     </header>
     <h3>${esc(r.houseCode)} · ${esc(item.houseName)}</h3>
     <p class="dates">${weekday(item.checkIn)} ${day(item.checkIn)} → ${weekday(item.checkOut)} ${day(item.checkOut)} <span>· ${nights}</span></p>
+    ${left !== null ? `<p class="note">⏳ Datas seguras por mais ${left >= 60 ? `${Math.floor(left / 60)}h${String(left % 60).padStart(2, '0')}` : `${left} min`}</p>` : ''}
     ${who}
     ${payment ? `<p class="pay">${payment}</p>` : ''}
     ${actions ? `<div class="actions">${actions}</div>` : ''}

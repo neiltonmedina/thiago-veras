@@ -10,6 +10,11 @@ function normalizeNumber(n: string): string {
   return n.replace(/\D/g, '');
 }
 
+/** WhatsApp desligado (sem credenciais da Meta): nada é enviado, só fica no log. */
+function skipped(to: string): void {
+  console.log(`[whatsapp desligado] mensagem para ${normalizeNumber(to)} não enviada`);
+}
+
 function indent(s: string): string {
   return s.split('\n').map(l => '    ' + l).join('\n');
 }
@@ -42,6 +47,7 @@ async function sendMessage(op: string, to: string, payload: Record<string, unkno
 }
 
 export async function sendText(to: string, text: string): Promise<void> {
+  if (!wa.enabled) return skipped(to);
   if (config.simulate) {
     console.log(`\n  📱 BOT → ${normalizeNumber(to)} (texto):\n${indent(text)}\n`);
     return;
@@ -51,6 +57,7 @@ export async function sendText(to: string, text: string): Promise<void> {
 
 /** Imagem por URL pública (HTTPS). A Meta baixa o arquivo do nosso servidor. */
 export async function sendImage(to: string, imageUrl: string, caption?: string): Promise<void> {
+  if (!wa.enabled) return skipped(to);
   if (config.simulate) {
     console.log(`  🖼️  BOT → ${normalizeNumber(to)} (imagem): ${imageUrl}${caption ? `\n${indent(caption)}` : ''}`);
     return;
@@ -59,6 +66,7 @@ export async function sendImage(to: string, imageUrl: string, caption?: string):
 }
 
 export async function sendVideo(to: string, videoUrl: string, caption?: string): Promise<void> {
+  if (!wa.enabled) return skipped(to);
   if (config.simulate) {
     console.log(`  🎥 BOT → ${normalizeNumber(to)} (vídeo):  ${videoUrl}${caption ? `\n${indent(caption)}` : ''}`);
     return;
@@ -68,6 +76,7 @@ export async function sendVideo(to: string, videoUrl: string, caption?: string):
 
 /** Imagem gerada em memória (QR Code do Pix): sobe pra Meta e envia pelo id. */
 export async function sendImageBase64(to: string, base64: string, caption?: string): Promise<void> {
+  if (!wa.enabled) return skipped(to);
   if (config.simulate) {
     console.log(`  🖼️  BOT → ${normalizeNumber(to)} (imagem gerada, ${base64.length} bytes base64)${caption ? `\n${indent(caption)}` : ''}`);
     return;
@@ -87,6 +96,7 @@ export async function sendImageBase64(to: string, base64: string, caption?: stri
  * configurado, usamos ele, senão tentamos texto livre.
  */
 export async function sendNotice(to: string, text: string): Promise<void> {
+  if (!wa.enabled) return skipped(to);
   if (config.simulate || !wa.supportTemplate) {
     await sendText(to, text);
     return;

@@ -1,5 +1,18 @@
 # Anfitrião no WhatsApp — Casas do Litoral PI
 
+## Reservas pelo site (sem WhatsApp da Meta)
+
+O site (`thiagoverasempreendimentos.github.io`) conversa com este servidor por uma API pública:
+
+| Endereço | O que faz |
+|---|---|
+| `GET /api/disponibilidade` | Períodos ocupados de cada casa (pendentes, confirmados e bloqueios do painel). Não expõe dados de clientes. |
+| `POST /api/reservar` | Segura as datas por `HOLD_MINUTES`. Recusa período que cruza com outro (409). Limites por IP e por WhatsApp. |
+
+O Thiago confirma ou cancela em `/admin`; ao confirmar, as datas seguem ocupadas, ao cancelar ou expirar voltam a ficar livres.
+Sem as credenciais da Meta no `.env`, o agente do WhatsApp fica desligado e só o site e o painel funcionam.
+Teste da API: `npm run test:site`. Teste do agente: `npm run simulate`.
+
 Agente de WhatsApp que atende 24h os clientes das casas de temporada do Thiago
 no litoral do Piauí: apresenta as casas com fotos e vídeo, consulta datas, faz a
 pré-reserva e cobra o sinal por Pix, confirmando sozinho quando o pagamento cai.

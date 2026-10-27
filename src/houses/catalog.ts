@@ -4,7 +4,10 @@ import { dirname, join } from 'node:path';
 import type { House } from '../types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_PATH = join(__dirname, 'data.json');
+// Em simulação usa as casas de exemplo (data.sample.json), que têm preços e fotos
+// completos para os testes. CATALOG_PATH força outro arquivo, se necessário.
+const DATA_PATH = process.env.CATALOG_PATH
+  ?? join(__dirname, process.env.SIMULATE === '1' ? 'data.sample.json' : 'data.json');
 
 let cache: House[] | null = null;
 let cacheAt = 0;

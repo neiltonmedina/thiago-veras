@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../config.js';
 
 // Em modo simulação, evita chamar Gemini real (nem exige chave válida)
-const genAI = config.simulate ? null : new GoogleGenerativeAI(config.gemini.apiKey);
+const genAI = config.simulate || !config.gemini.apiKey ? null : new GoogleGenerativeAI(config.gemini.apiKey);
 const model = genAI?.getGenerativeModel({ model: 'gemini-2.5-flash' }) ?? null;
 
 export type Intent =

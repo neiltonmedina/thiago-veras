@@ -82,7 +82,7 @@ adminRouter.get('/', async (req, res) => {
       return {
         r,
         houseName: houseNames.get(r.houseCode) ?? r.houseCode,
-        clientName: client?.name ?? null,
+        clientName: client?.name ?? r.guestName ?? null,
         checkIn: fromIsoDate(r.checkIn),
         checkOut: fromIsoDate(r.checkOut),
       };

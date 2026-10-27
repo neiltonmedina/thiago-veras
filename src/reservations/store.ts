@@ -13,13 +13,15 @@ export type Reservation = {
   clientId: number | null;
   clientPhone: string;
   status: ReservationStatus;
-  source: 'whatsapp' | 'manual';
+  source: 'whatsapp' | 'manual' | 'site';
   note: string | null;
   pixTxid: string | null;
   pixCopyPaste: string | null;
   paidAt: number | null;
   expiresAt: number | null;
   createdAt: number;
+  guestName: string | null;
+  guests: number | null;
 };
 
 export type Client = {
@@ -49,6 +51,8 @@ type ReservationRow = {
   paid_at: number | null;
   expires_at: number | null;
   created_at: number;
+  guest_name: string | null;
+  guests: number | null;
 };
 
 type ClientRow = {
@@ -79,6 +83,8 @@ function fromRow(r: ReservationRow): Reservation {
     paidAt: r.paid_at,
     expiresAt: r.expires_at,
     createdAt: r.created_at,
+    guestName: r.guest_name,
+    guests: r.guests,
   };
 }
 
@@ -112,16 +118,20 @@ export function createPending(input: {
   totalCents: number;
   clientPhone: string;
   ttlMs: number;
+  source?: 'whatsapp' | 'site';
+  guestName?: string | null;
+  guests?: number | null;
 }): Reservation {
   const now = Date.now();
   const result = db.prepare(`
     INSERT INTO reservations (
       house_code, check_in, check_out, nights, total_cents,
-      client_phone, status, source, expires_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 'whatsapp', ?, ?)
+      client_phone, status, source, expires_at, created_at, guest_name, guests
+    ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
   `).run(
     input.houseCode, input.checkIn, input.checkOut,
-    input.nights, input.totalCents, input.clientPhone, now + input.ttlMs, now,
+    input.nights, input.totalCents, input.clientPhone, input.source ?? 'whatsapp',
+    now + input.ttlMs, now, input.guestName ?? null, input.guests ?? null,
   );
   return getById(Number(result.lastInsertRowid))!;
 }
@@ -220,6 +230,31 @@ export function expirePending(now: number = Date.now()): Reservation[] {
     RETURNING *
   `).all(now) as ReservationRow[];
   return rows.map(fromRow);
+}
+
+/**
+ * Períodos ocupados (reservas pendentes e confirmadas, bloqueios manuais) que
+ * ainda não terminaram. Alimenta o calendário do site; não expõe dados de cliente.
+ */
+export function listOccupied(todayIso: string, houseCode?: string): { houseCode: string; checkIn: string; checkOut: string }[] {
+  const rows = db.prepare(`
+    SELECT house_code, check_in, check_out FROM reservations
+    WHERE status IN ('pending', 'confirmed')
+      AND check_out > ?
+      AND (? IS NULL OR house_code = ?)
+    ORDER BY house_code, check_in
+  `).all(todayIso, houseCode ?? null, houseCode ?? null) as { house_code: string; check_in: string; check_out: string }[];
+  return rows.map(r => ({ houseCode: r.house_code, checkIn: r.check_in, checkOut: r.check_out }));
+}
+
+/** Pré-reservas em aberto vindas do site para um mesmo IP-chave (limite anti-abuso). */
+export function countActiveSiteHolds(phone: string): number {
+  if (!phone) return 0;
+  const row = db.prepare(`
+    SELECT COUNT(*) AS n FROM reservations
+    WHERE source = 'site' AND status = 'pending' AND client_phone = ?
+  `).get(phone) as { n: number };
+  return row.n;
 }
 
 // ============ Clients ============

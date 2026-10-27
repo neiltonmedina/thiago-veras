@@ -61,6 +61,8 @@ addColumnIfMissing('reservations', 'deposit_cents', 'INTEGER');
 addColumnIfMissing('reservations', 'pix_txid', 'TEXT');
 addColumnIfMissing('reservations', 'pix_copy_paste', 'TEXT');
 addColumnIfMissing('reservations', 'paid_at', 'INTEGER');
+addColumnIfMissing('reservations', 'guest_name', 'TEXT');   // reservas feitas pelo site
+addColumnIfMissing('reservations', 'guests', 'INTEGER');
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_res_pix_txid ON reservations(pix_txid) WHERE pix_txid IS NOT NULL`);
 
 /** Fecha o banco. Chamar em graceful shutdown. */
