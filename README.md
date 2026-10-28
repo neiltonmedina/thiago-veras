@@ -9,7 +9,10 @@ O site (`thiagoverasempreendimentos.github.io`) conversa com este servidor por u
 | `GET /api/disponibilidade` | Períodos ocupados de cada casa (pendentes, confirmados e bloqueios do painel). Não expõe dados de clientes. |
 | `POST /api/reservar` | Segura as datas por `HOLD_MINUTES`. Recusa período que cruza com outro (409). Limites por IP e por WhatsApp. |
 
-O Thiago confirma ou cancela em `/admin`; ao confirmar, as datas seguem ocupadas, ao cancelar ou expirar voltam a ficar livres.
+O Thiago usa o **painel** em `/admin`, um aplicativo para o celular (login por tela, abas Pedidos, Calendário e Bloquear,
+contagem regressiva ao vivo das datas seguras, botões Confirmar, Conversar no WhatsApp, +1 hora e Cancelar). Pode ser instalado na
+tela inicial. Ao confirmar, as datas seguem ocupadas; ao cancelar ou expirar, voltam a ficar livres no site.
+Os arquivos do painel ficam em `src/admin/ui/` e são copiados para `dist/` pelo `npm run build`.
 Sem as credenciais da Meta no `.env`, o agente do WhatsApp fica desligado e só o site e o painel funcionam.
 Teste da API: `npm run test:site`. Teste do agente: `npm run simulate`.
 

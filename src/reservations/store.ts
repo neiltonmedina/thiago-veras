@@ -161,6 +161,21 @@ export function markStatus(id: number, status: ReservationStatus): void {
   db.prepare(`UPDATE reservations SET status = ?, expires_at = NULL WHERE id = ?`).run(status, id);
 }
 
+/**
+ * Dá mais tempo a uma pré-reserva (ou reativa uma que expirou há pouco, se as
+ * datas ainda estiverem livres). Retorna a reserva atualizada ou o motivo da recusa.
+ */
+export function extendHold(id: number, minutes: number, now: number = Date.now()):
+  { ok: true; reservation: Reservation } | { ok: false; reason: 'not_found' | 'not_extendable' | 'overlap' } {
+  const r = getById(id);
+  if (!r) return { ok: false, reason: 'not_found' };
+  if (r.status !== 'pending' && r.status !== 'expired') return { ok: false, reason: 'not_extendable' };
+  if (r.status === 'expired' && hasOverlap(r.houseCode, r.checkIn, r.checkOut, r.id)) return { ok: false, reason: 'overlap' };
+  const base = r.status === 'pending' ? Math.max(r.expiresAt ?? now, now) : now;
+  db.prepare(`UPDATE reservations SET status = 'pending', expires_at = ? WHERE id = ?`).run(base + minutes * 60_000, id);
+  return { ok: true, reservation: getById(id)! };
+}
+
 export function setPixCharge(id: number, input: { txid: string; copyPaste: string; depositCents: number }): void {
   db.prepare(`
     UPDATE reservations SET pix_txid = ?, pix_copy_paste = ?, deposit_cents = ? WHERE id = ?

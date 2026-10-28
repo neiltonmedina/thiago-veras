@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#2b2b2b">
+<title>Entrar — Painel Thiago Veras</title>
+<link rel="manifest" href="/admin/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/admin/ui/icon-192.png">
+<link rel="apple-touch-icon" href="/admin/ui/icon-192.png">
+<link rel="stylesheet" href="/admin/ui/app.css?v=__V__">
+</head>
+<body class="login">
+<main class="login-box">
+  <img class="login-logo" src="/admin/ui/logo-icone.png" alt="" width="84" height="48">
+  <h1>Painel de reservas</h1>
+  <p class="sub">Thiago Veras Empreendimentos</p>
+  <form id="f" novalidate>
+    <label>Usuário
+      <input id="u" name="usuario" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" value="thiago" required>
+    </label>
+    <label>Senha
+      <span class="senha">
+        <input id="s" name="senha" type="password" autocomplete="current-password" required>
+        <button type="button" id="ver" class="olho" aria-label="Mostrar senha">👁</button>
+      </span>
+    </label>
+    <p id="erro" class="erro" role="alert" hidden></p>
+    <button class="btn primario grande" id="entrar" type="submit">Entrar</button>
+  </form>
+</main>
+<script src="/admin/ui/login.js?v=__V__"></script>
+</body>
+</html>
