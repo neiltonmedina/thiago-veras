@@ -42,6 +42,8 @@ setv WEB_ORIGINS https://thiagoverasempreendimentos.github.io
 for v in WHATSAPP_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_VERIFY_TOKEN WHATSAPP_APP_SECRET; do
   sudo sed -i "/^$v=/d" "$E"
 done
+# Sem credenciais da Efí, o caminho de exemplo do certificado fica vazio (Pix manual)
+sudo grep -q '^EFI_CLIENT_ID=.\+' "$E" || sudo sed -i 's#^EFI_CERT_PATH=.*#EFI_CERT_PATH=#' "$E"
 sudo chmod 600 "$E"; sudo chown thiagoveras:thiagoveras "$E"
 
 echo "▶ Atualizando o HTTPS..."

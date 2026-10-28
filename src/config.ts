@@ -76,9 +76,11 @@ if (!whatsappEnabled && waFields.some(Boolean)) {
   process.exit(1);
 }
 
-const efiFields = [env.EFI_CLIENT_ID, env.EFI_CLIENT_SECRET, env.EFI_CERT_PATH, env.EFI_PIX_KEY];
-const efiConfigured = efiFields.every(Boolean);
-if (!efiConfigured && efiFields.some(Boolean)) {
+// O caminho do certificado vem preenchido no .env.example, então não conta como sinal de que o Pix
+// foi configurado: só as três credenciais da Efí decidem se o Pix está (ou deveria estar) ligado.
+const efiCredentials = [env.EFI_CLIENT_ID, env.EFI_CLIENT_SECRET, env.EFI_PIX_KEY];
+const efiConfigured = efiCredentials.every(Boolean) && !!env.EFI_CERT_PATH;
+if (!efiConfigured && efiCredentials.some(Boolean)) {
   console.error('❌ Pix: preencha EFI_CLIENT_ID, EFI_CLIENT_SECRET, EFI_CERT_PATH e EFI_PIX_KEY juntos (ou nenhum).');
   process.exit(1);
 }
