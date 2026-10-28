@@ -64,7 +64,9 @@
   }
   var folhaAberta = null;
   function abrirFolha(html, aoAbrir) {
-    var f = $('#folha');
+    // Cada janela começa de um elemento novo: assim os cliques da janela anterior não ficam acumulados
+    var antigo = $('#folha'), f = antigo.cloneNode(false);
+    antigo.parentNode.replaceChild(f, antigo);
     f.innerHTML = '<div class="alca"></div>' + html;
     f.hidden = false; $('#fundo').hidden = false;
     document.body.style.overflow = 'hidden';
@@ -408,14 +410,62 @@
     abrirFolha('<h3>Painel de reservas</h3><p>Thiago Veras Empreendimentos</p>' +
       '<div class="lista" style="margin-top:12px">' +
       '<a class="item" href="https://thiagoverasempreendimentos.github.io" target="_blank" rel="noopener" style="text-decoration:none"><div class="meio"><strong>Abrir o site</strong><span>Ver como o cliente vê</span></div></a>' +
+      '<button class="item" data-senha style="border:0;width:100%;text-align:left;cursor:pointer"><div class="meio"><strong>Trocar senha</strong><span>Escolha uma senha nova para o painel</span></div></button>' +
+      '<button class="item" data-todos style="border:0;width:100%;text-align:left;cursor:pointer"><div class="meio"><strong>Sair de todos os aparelhos</strong><span>Use se perder ou emprestar o celular</span></div></button>' +
       '<div class="item"><div class="meio"><strong>Instalar no celular</strong><span>No Chrome: menu ⋮ → Adicionar à tela inicial. No iPhone: Compartilhar → Adicionar à Tela de Início.</span></div></div>' +
       '</div><div class="acoes"><button class="btn" data-fechar>Fechar</button><button class="btn perigo" data-sair>Sair</button></div>',
       function (f) {
         f.addEventListener('click', function (e) {
           if (e.target.closest('[data-fechar]')) fecharFolha();
+          if (e.target.closest('[data-senha]')) { telaTrocarSenha(); return; }
+          if (e.target.closest('[data-todos]')) { sairDeTodos(); return; }
           if (e.target.closest('[data-sair]')) {
             fetch('/admin/logout', { method: 'POST', headers: { 'X-Painel': '1' }, credentials: 'same-origin' }).then(function () { location.replace('/admin/login'); });
           }
+        });
+      });
+  }
+
+  function sairDeTodos() {
+    perguntar({ titulo: 'Sair de todos os aparelhos?', texto: 'Todos os outros celulares e computadores precisam entrar de novo com a senha. Este aparelho continua conectado.', botao: 'Desconectar todos', perigo: true })
+      .then(function (ok) { return ok && api('/sair-todos', { metodo: 'POST' }); })
+      .then(function (res) { if (res) aviso(res.message, res.ok ? 'ok' : 'erro'); })
+      .catch(function (e) { if (!e || e.message !== 'sessao') aviso('Sem conexão. Tente de novo.', 'erro'); });
+  }
+
+  function telaTrocarSenha() {
+    abrirFolha('<h3>Trocar senha</h3><p>Escolha uma senha que só você e quem usa o painel conheçam.</p>' +
+      '<form id="f-senha" novalidate>' +
+      '<label class="campo-senha">Senha atual<input id="s-atual" type="password" autocomplete="current-password" required></label>' +
+      '<label class="campo-senha">Senha nova<input id="s-nova" type="password" autocomplete="new-password" required></label>' +
+      '<div class="forca" id="s-barra" data-nivel="0" aria-hidden="true" style="margin-top:8px"><i></i><i></i><i></i><i></i></div><p class="forca-txt" id="s-rotulo" aria-live="polite"></p>' +
+      '<label class="campo-senha">Repita a senha nova<input id="s-rep" type="password" autocomplete="new-password" required></label>' +
+      '<p class="dica" style="margin-top:10px">Mínimo de 10 caracteres, sem espaços. Uma frase juntando 3 palavras e um número funciona bem.</p>' +
+      '<p class="erro" id="s-erro" role="alert" hidden style="margin-top:10px"></p>' +
+      '<div class="acoes"><button type="button" class="btn" data-ver>Mostrar senhas</button><button type="button" class="btn" data-fechar>Cancelar</button><button type="submit" class="btn primario" id="s-ok" style="flex:1 1 100%">Salvar senha nova</button></div></form>',
+      function (f) {
+        var atual = $('#s-atual', f), nova = $('#s-nova', f), rep = $('#s-rep', f), erro = $('#s-erro', f), ok = $('#s-ok', f);
+        atual.focus();
+        nova.addEventListener('input', function () { window.pintarForca($('#s-barra', f), $('#s-rotulo', f), nova.value); });
+        f.addEventListener('click', function (e) {
+          if (e.target.closest('[data-fechar]')) fecharFolha();
+          if (e.target.closest('[data-ver]')) {
+            var t = atual.type === 'password' ? 'text' : 'password';
+            atual.type = nova.type = rep.type = t;
+            e.target.closest('[data-ver]').textContent = t === 'text' ? 'Esconder senhas' : 'Mostrar senhas';
+          }
+        });
+        $('#f-senha', f).addEventListener('submit', function (e) {
+          e.preventDefault();
+          function falha(t) { erro.textContent = t; erro.hidden = false; ok.disabled = false; ok.classList.remove('carregando'); }
+          erro.hidden = true;
+          if (!atual.value) return falha('Digite a senha atual.');
+          if (nova.value !== rep.value) return falha('As duas senhas novas não são iguais.');
+          ok.disabled = true; ok.classList.add('carregando');
+          api('/senha', { metodo: 'POST', corpo: { atual: atual.value, nova: nova.value } }).then(function (res) {
+            if (res.ok) { fecharFolha(); aviso(res.message, 'ok'); return; }
+            falha(res.message || 'Não foi possível trocar a senha.');
+          }).catch(function (err) { if (!err || err.message !== 'sessao') falha('Sem conexão. Tente de novo.'); });
         });
       });
   }

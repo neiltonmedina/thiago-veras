@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#2b2b2b">
+<title>Criar nova senha — Painel Thiago Veras</title>
+<link rel="icon" type="image/png" href="/admin/ui/icon-192.png">
+<link rel="stylesheet" href="/admin/ui/app.css?v=__V__">
+</head>
+<body class="login" data-pagina="redefinir">
+<main class="login-box">
+  <img class="login-logo" src="/admin/ui/logo-icone.png" alt="" width="84" height="48">
+  <h1>Criar nova senha</h1>
+  <p id="verificando" class="sub">Conferindo o link…</p>
+  <form id="f" hidden novalidate>
+    <label>Senha nova
+      <input id="n1" type="password" autocomplete="new-password" minlength="10" required>
+    </label>
+    <div class="forca" id="barra" data-nivel="0" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <p class="forca-txt" id="rotulo" aria-live="polite"></p>
+    <label>Repita a senha nova
+      <input id="n2" type="password" autocomplete="new-password" required>
+    </label>
+    <button type="button" class="btn grande" id="ver" style="margin-bottom:12px">Mostrar / esconder senha</button>
+    <p class="dica-login" style="text-align:left">Mínimo de 10 caracteres, sem espaços. Uma frase juntando 3 palavras e um número funciona bem.</p>
+    <p id="msg" class="erro" role="alert" hidden></p>
+    <button class="btn primario grande" id="salvar" type="submit">Salvar nova senha</button>
+  </form>
+  <div id="pronto" hidden>
+    <p class="ok-msg">Senha criada! Todos os aparelhos foram desconectados.</p>
+    <a class="btn primario grande" href="/admin/login">Entrar com a senha nova</a>
+  </div>
+  <div id="invalido" hidden>
+    <p class="erro" id="invalido-txt"></p>
+    <a class="btn primario grande" href="/admin/esqueci">Pedir um link novo</a>
+  </div>
+</main>
+<script src="/admin/ui/forca.js?v=__V__"></script>
+<script src="/admin/ui/senha.js?v=__V__"></script>
+</body>
+</html>

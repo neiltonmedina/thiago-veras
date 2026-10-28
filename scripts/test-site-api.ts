@@ -6,6 +6,7 @@ process.env.SIMULATE = '1';
 process.env.CATALOG_PATH = new URL('../src/houses/data.json', import.meta.url).pathname; // as casas reais
 process.env.HOLD_MINUTES = '120';
 process.env.WEB_ORIGINS = 'https://site-autorizado.example';
+process.env.ADMIN_EMAIL = 'thiago@exemplo.com';
 
 import type { AddressInfo } from 'node:net';
 
@@ -15,6 +16,7 @@ const { siteApi } = await import('../src/site/api.js');
 const { adminRouter } = await import('../src/admin/routes.js');
 const { config } = await import('../src/config.js');
 const store = await import('../src/reservations/store.js');
+const { db } = await import('../src/db/index.js');
 const { expireAndNotify } = await import('../src/reservations/lifecycle.js');
 
 const app = express();
@@ -211,6 +213,111 @@ Date.now = realNow;
 r = await get('/api/disponibilidade?casa=C01');
 const expiradosC01 = store.listForAdmin('2000-01-01').filter(x => x.houseCode === 'C01' && x.status === 'expired').length;
 check('pré-reservas não pagas expiram e as datas se liberam', expiradosC01 > 0 && r.json.casas.C01.length === 0, `expirados=${expiradosC01} ${JSON.stringify(r.json.casas.C01)}`);
+
+// 13. conta do painel: trocar senha, sair de todos, esqueci minha senha
+const { outbox } = await import('../src/admin/mailer.js');
+const cred = await import('../src/admin/credentials.js');
+const senhaInicial = config.admin!.password;
+const loginCom = (senha: string, ip: string) => fetch(base + '/admin/login', {
+  method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base, 'X-Painel': '1', 'X-Forwarded-For': ip }, body: JSON.stringify({ usuario: 'thiago', senha }),
+});
+const cookieDe = (res: Response) => (res.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+const como = (ck: string, path: string, method = 'GET', body?: unknown, ip = '10.8.0.1') => fetch(base + path, {
+  method, redirect: 'manual',
+  headers: { Cookie: ck, Origin: base, 'X-Painel': '1', 'X-Forwarded-For': ip, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+  body: body ? JSON.stringify(body) : undefined,
+});
+const publico = (path: string, body: unknown, ip: string, headers: Record<string, string> = {}) => fetch(base + path, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base, 'X-Painel': '1', 'X-Forwarded-For': ip, ...headers }, body: JSON.stringify(body),
+});
+const espera = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+const NOVA = 'JangadaCajuPedra7391';
+let lg2 = await loginCom(senhaInicial, '10.8.1.1');
+const ckA = cookieDe(lg2);
+check('entra com a senha do .env enquanto nenhuma foi trocada', lg2.status === 200 && ckA.length > 20);
+check('/api/conta mostra o e-mail de recuperação mascarado', (await (await como(ckA, '/admin/api/conta')).json() as any).emailRecuperacao === 'th••••@exemplo.com');
+
+check('trocar sem estar logado é recusado (401)', (await fetch(base + '/admin/api/senha', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base, 'X-Painel': '1' }, body: JSON.stringify({ atual: senhaInicial, nova: NOVA }) })).status === 401);
+check('trocar com a senha atual errada é recusado (403)', (await como(ckA, '/admin/api/senha', 'POST', { atual: 'errada-errada', nova: NOVA }, '10.8.1.2')).status === 403);
+for (const [nome, nova] of [['curta', 'Curta12'], ['só números', '123456789012'], ['comum', 'senha1234567'], ['com o nome da empresa', 'ThiagoCasas2026x'], ['com espaço', 'Casas do Sol 2026']] as const) {
+  const r2 = await como(ckA, '/admin/api/senha', 'POST', { atual: senhaInicial, nova }, '10.8.1.3');
+  check(`senha nova ${nome} é recusada (422)`, r2.status === 422, `${r2.status} ${JSON.stringify(await r2.json())}`);
+}
+const trocou = await como(ckA, '/admin/api/senha', 'POST', { atual: senhaInicial, nova: NOVA }, '10.8.1.4');
+const ckA2 = cookieDe(trocou);
+check('senha trocada com sucesso e este aparelho continua conectado', trocou.status === 200 && ckA2.length > 20 && (await como(ckA2, '/admin/api/estado')).status === 200);
+check('a senha fica guardada só como hash (nunca em texto)', cred.hasCustomPassword() && !JSON.stringify(require_db_settings()).includes(NOVA));
+check('o cookie antigo deixa de valer depois da troca', (await como(ckA, '/admin/api/estado')).status === 401);
+check('a senha antiga não entra mais', (await loginCom(senhaInicial, '10.8.1.5')).status === 401);
+const lgNova = await loginCom(NOVA, '10.8.1.6');
+const ckB = cookieDe(lgNova);
+check('a senha nova entra', lgNova.status === 200 && ckB.length > 20);
+check('Basic (curl) também usa a senha nova', (await fetch(base + '/admin/api/estado', { headers: { Authorization: 'Basic ' + Buffer.from(`thiago:${NOVA}`).toString('base64') } })).status === 200);
+
+// sair de todos
+const todos = await como(ckB, '/admin/api/sair-todos', 'POST', undefined, '10.8.2.1');
+const ckB2 = cookieDe(todos);
+check('"sair de todos" mantém só este aparelho', todos.status === 200 && (await como(ckB2, '/admin/api/estado')).status === 200);
+check('os outros aparelhos são desconectados', (await como(ckA2, '/admin/api/estado')).status === 401 && (await como(ckB, '/admin/api/estado')).status === 401);
+
+// limite de tentativas ao trocar a senha
+let travou = 0;
+for (let i = 0; i < 8; i++) if ((await como(ckB2, '/admin/api/senha', 'POST', { atual: 'chute' + i + 'xxxxxx', nova: NOVA + 'x' }, '10.8.2.9')).status === 429) travou++;
+check('muitos chutes na senha atual travam por alguns minutos (429)', travou >= 2, `travou ${travou}`);
+
+// esqueci minha senha
+const paginaLogin = await (await fetch(base + '/admin/login')).text();
+check('a tela de login mostra "Esqueci minha senha"', paginaLogin.includes('/admin/esqueci') && (await fetch(base + '/admin/esqueci')).status === 200);
+check('a tela de nova senha não deixa o código vazar para outros sites', (await fetch(base + '/admin/redefinir')).headers.get('referrer-policy') === 'no-referrer');
+check('pedido de outro site é bloqueado (403)', (await publico('/admin/esqueci', { email: 'thiago@exemplo.com' }, '10.8.3.1', { Origin: 'https://site-de-fora.example' })).status === 403);
+
+const enviadosAntes = outbox.length;
+const rDesc = await (await publico('/admin/esqueci', { email: 'estranho@exemplo.com' }, '10.8.3.2')).json() as any;
+await espera(60);
+const rConh = await (await publico('/admin/esqueci', { email: ' Thiago@Exemplo.com ' }, '10.8.3.3')).json() as any;
+await espera(120);
+check('e-mail desconhecido não envia nada', outbox.length === enviadosAntes + 1, `${outbox.length - enviadosAntes} e-mails`);
+check('a resposta é igual para e-mail conhecido e desconhecido (ninguém descobre qual é o cadastrado)', rDesc.ok && rConh.ok && rDesc.message === rConh.message);
+const mail = outbox[outbox.length - 1]!;
+const link = (mail.text.match(/https?:\/\/\S+/) ?? [''])[0];
+check('o e-mail vai para o endereço do Thiago, com link do painel e prazo', mail.to === 'thiago@exemplo.com' && link.startsWith(`${config.publicUrl}/admin/redefinir#`) && /30 minutos/.test(mail.text), link);
+const token = link.split('#')[1] ?? '';
+check('o código do link tem tamanho de segurança e vai no fragmento (não aparece em registros)', token.length >= 40 && !link.includes('?'));
+
+check('o link confere como válido', (await (await publico('/admin/redefinir/verificar', { token }, '10.8.3.4')).json() as any).ok === true);
+check('um código inventado não vale', (await (await publico('/admin/redefinir/verificar', { token: token.slice(0, -2) + 'zz' }, '10.8.3.5')).json() as any).ok === false);
+const fraca = await publico('/admin/redefinir', { token, nova: 'curta' }, '10.8.3.6');
+check('senha fraca é recusada sem gastar o link', fraca.status === 422 && (await (await publico('/admin/redefinir/verificar', { token }, '10.8.3.7')).json() as any).ok === true);
+const redef = await publico('/admin/redefinir', { token, nova: 'TapiocaFaroleMar5820' }, '10.8.3.8');
+check('o link cria a senha nova', redef.status === 200 && (await loginCom('TapiocaFaroleMar5820', '10.8.3.9')).status === 200);
+check('a senha anterior deixa de valer e os aparelhos conectados saem', (await loginCom(NOVA, '10.8.3.10')).status === 401 && (await como(ckB2, '/admin/api/estado')).status === 401);
+check('o link só pode ser usado uma vez (410)', (await publico('/admin/redefinir', { token, nova: 'OutraSenhaBoa2026Xx' }, '10.8.3.11')).status === 410);
+
+// novo pedido invalida o link anterior
+await publico('/admin/esqueci', { email: 'thiago@exemplo.com' }, '10.8.4.1'); await espera(100);
+const tk1 = (outbox[outbox.length - 1]!.text.match(/#(\S+)/) ?? [])[1] ?? '';
+await publico('/admin/esqueci', { email: 'thiago@exemplo.com' }, '10.8.4.2'); await espera(100);
+const tk2 = (outbox[outbox.length - 1]!.text.match(/#(\S+)/) ?? [])[1] ?? '';
+check('um pedido novo cancela o link anterior', tk1 !== tk2 && cred.tokenResetValido(tk1) === false && cred.tokenResetValido(tk2) === true);
+
+// link vencido
+const realNow2 = Date.now;
+Date.now = () => realNow2() + 31 * 60_000;
+const vencido = await publico('/admin/redefinir', { token: tk2, nova: 'JamantaMarePedra4417' }, '10.8.4.3');
+Date.now = realNow2;
+check('link com mais de 30 minutos não vale (410)', vencido.status === 410);
+
+// limite de pedidos de "esqueci"
+let barrados = 0;
+for (let i = 0; i < 5; i++) if ((await publico('/admin/esqueci', { email: 'x@y.com' }, '10.8.5.5')).status === 429) barrados++;
+check('muitos pedidos de "esqueci" da mesma internet são barrados (429)', barrados >= 2, `barrou ${barrados}`);
+
+// plano B: voltar à senha do .env
+cred.clearCustomPassword();
+check('apagando a senha trocada, volta a valer a senha do .env (comando de emergência)', (await loginCom(senhaInicial, '10.8.6.1')).status === 200 && (await loginCom('TapiocaFaroleMar5820', '10.8.6.2')).status === 401);
+
+function require_db_settings(): unknown { return db.prepare('SELECT key, value FROM admin_settings').all(); }
 
 server.close();
 console.log(failed ? `\n❌ ${failed} verificação(ões) falharam.` : '\n✅ Todas as verificações passaram.');

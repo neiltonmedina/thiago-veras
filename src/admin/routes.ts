@@ -23,6 +23,10 @@ import { confirmManually, cancelReservation, blockDates, type ActionResult } fro
 import {
   SESSION_COOKIE, SESSION_DAYS, checkCredentials, createSessionToken, verifySessionToken, readCookie,
 } from './session.js';
+import {
+  checkPassword, setPassword, rotateEpoch, validarSenhaNova, criarTokenReset, tokenResetValido, consumirTokenReset, RESET_VALIDADE_MIN,
+} from './credentials.js';
+import { enviarEmail, emailRedefinir } from './mailer.js';
 
 export const adminRouter = Router();
 
@@ -33,8 +37,13 @@ const VERSION = Date.now().toString(36); // muda a cada reinício: força o nave
 function page(name: string): string {
   return readFileSync(join(UI_DIR, name), 'utf-8').replaceAll('__V__', VERSION);
 }
-const LOGIN_HTML = page('login.html');
+const ESQUECI_ATIVO = config.mail.enabled;
+const LOGIN_HTML = page('login.html').replace('__ESQUECI__', ESQUECI_ATIVO
+  ? '<a class="esqueci" href="/admin/esqueci">Esqueci minha senha</a>'
+  : '<p class="dica-login">Esqueceu a senha? Peça ao responsável pelo sistema para gerar outra.</p>');
 const APP_HTML = page('app.html');
+const ESQUECI_HTML = page('esqueci.html');
+const REDEFINIR_HTML = page('redefinir.html');
 
 // ---------- autenticação ----------
 function basicOk(req: Request): boolean {
@@ -68,13 +77,38 @@ function sameOrigin(req: Request, res: Response, next: NextFunction): void {
   res.status(403).json({ ok: false, message: 'Requisição bloqueada.' });
 }
 
-// ---------- limite de tentativas de login ----------
+// ---------- limites de tentativas ----------
 const falhas = new Map<string, number[]>();
-function bloqueado(ip: string): boolean {
+function bloqueado(chave: string, max = 8, janelaMs = 15 * 60_000): boolean {
   const agora = Date.now();
-  const lista = (falhas.get(ip) ?? []).filter(t => agora - t < 15 * 60_000);
-  falhas.set(ip, lista);
-  return lista.length >= 8;
+  const lista = (falhas.get(chave) ?? []).filter(t => agora - t < janelaMs);
+  falhas.set(chave, lista);
+  return lista.length >= max;
+}
+function registrarFalha(chave: string): void {
+  falhas.set(chave, [...(falhas.get(chave) ?? []), Date.now()]);
+}
+setInterval(() => {
+  const agora = Date.now();
+  for (const [k, l] of falhas) {
+    const f = l.filter(t => agora - t < 60 * 60_000);
+    if (f.length) falhas.set(k, f); else falhas.delete(k);
+  }
+}, 10 * 60_000).unref();
+
+function cookieDeSessao(req: Request): string {
+  const seguro = req.secure ? '; Secure' : '';
+  return `${SESSION_COOKIE}=${encodeURIComponent(createSessionToken())}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=${SESSION_DAYS * 86400}${seguro}`;
+}
+
+/** Só aceita pedidos feitos pela própria página (mesmo endereço + cabeçalho X-Painel). */
+function origemPropria(req: Request): boolean {
+  const source = req.headers.origin ?? req.headers.referer;
+  try {
+    return !!source && new URL(source).host === req.headers.host && req.headers['x-painel'] === '1';
+  } catch {
+    return false;
+  }
 }
 
 // ---------- arquivos públicos do app ----------
@@ -105,32 +139,89 @@ adminRouter.get('/login', (req, res) => {
 
 adminRouter.post('/login', express.json({ limit: '2kb' }), (req, res) => {
   if (!config.admin) { res.status(404).json({ ok: false, message: 'Painel desligado.' }); return; }
-  const source = req.headers.origin ?? req.headers.referer;
-  try {
-    if (!source || new URL(source).host !== req.headers.host || req.headers['x-painel'] !== '1') throw new Error('origem');
-  } catch {
+  if (!origemPropria(req)) {
     res.status(403).json({ ok: false, message: 'Requisição bloqueada.' });
     return;
   }
-  if (bloqueado(req.ip ?? '')) {
+  if (bloqueado(`login:${req.ip}`)) {
     res.status(429).json({ ok: false, message: 'Muitas tentativas. Espere alguns minutos e tente de novo.' });
     return;
   }
   const { usuario, senha } = (req.body ?? {}) as { usuario?: unknown; senha?: unknown };
   if (typeof usuario !== 'string' || typeof senha !== 'string' || !checkCredentials(usuario.trim(), senha)) {
-    falhas.set(req.ip ?? '', [...(falhas.get(req.ip ?? '') ?? []), Date.now()]);
+    registrarFalha(`login:${req.ip}`);
     res.status(401).json({ ok: false, message: 'Usuário ou senha incorretos.' });
     return;
   }
-  falhas.delete(req.ip ?? '');
-  const seguro = req.secure ? '; Secure' : '';
-  res.set('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(createSessionToken())}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=${SESSION_DAYS * 86400}${seguro}`);
+  falhas.delete(`login:${req.ip}`);
+  res.set('Set-Cookie', cookieDeSessao(req));
   res.json({ ok: true });
 });
 
 adminRouter.post('/logout', sameOrigin, (_req, res) => {
   res.set('Set-Cookie', `${SESSION_COOKIE}=; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=0`);
   res.json({ ok: true });
+});
+
+// ---------- esqueci minha senha (por e-mail) ----------
+const RESPOSTA_ESQUECI = 'Se o e-mail estiver cadastrado, enviamos o link para criar a nova senha. Confira também a caixa de spam.';
+
+adminRouter.get('/esqueci', (req, res) => {
+  if (!config.admin) { res.status(404).send('Painel desligado.'); return; }
+  if (!ESQUECI_ATIVO) { res.redirect(302, '/admin/login'); return; }
+  res.set('Cache-Control', 'no-store').type('html').send(ESQUECI_HTML);
+});
+
+adminRouter.post('/esqueci', express.json({ limit: '2kb' }), (req, res) => {
+  if (!config.admin || !ESQUECI_ATIVO) { res.status(404).json({ ok: false, message: 'Recuperação por e-mail não está ligada.' }); return; }
+  if (!origemPropria(req)) { res.status(403).json({ ok: false, message: 'Requisição bloqueada.' }); return; }
+  // limites por internet e no total, para ninguém usar isto para encher a caixa de e-mail do Thiago
+  if (bloqueado(`esqueci:${req.ip}`, 3, 60 * 60_000) || bloqueado('esqueci:total', 8, 60 * 60_000)) {
+    res.status(429).json({ ok: false, message: 'Muitos pedidos. Espere um pouco e tente de novo.' });
+    return;
+  }
+  registrarFalha(`esqueci:${req.ip}`); registrarFalha('esqueci:total');
+  const email = typeof (req.body as { email?: unknown })?.email === 'string' ? (req.body as { email: string }).email.trim().toLowerCase() : '';
+  // a resposta é sempre a mesma, exista o e-mail ou não; o envio acontece depois de responder
+  res.json({ ok: true, message: RESPOSTA_ESQUECI });
+  if (email && config.admin.email && email === config.admin.email) {
+    const token = criarTokenReset();
+    const link = `${config.publicUrl}/admin/redefinir#${token}`;
+    enviarEmail(emailRedefinir(link, RESET_VALIDADE_MIN))
+      .then(() => console.log('[painel] link de nova senha enviado'))
+      .catch(err => console.error('[painel] falha ao enviar o e-mail de nova senha:', err instanceof Error ? err.message : err));
+  }
+});
+
+adminRouter.get('/redefinir', (_req, res) => {
+  if (!config.admin) { res.status(404).send('Painel desligado.'); return; }
+  res.set('Cache-Control', 'no-store').set('Referrer-Policy', 'no-referrer').type('html').send(REDEFINIR_HTML);
+});
+
+adminRouter.post('/redefinir/verificar', express.json({ limit: '2kb' }), (req, res) => {
+  if (!config.admin || !origemPropria(req)) { res.status(403).json({ ok: false }); return; }
+  if (bloqueado(`redef:${req.ip}`, 10, 15 * 60_000)) { res.status(429).json({ ok: false, message: 'Muitas tentativas. Espere alguns minutos.' }); return; }
+  const token = typeof (req.body as { token?: unknown })?.token === 'string' ? (req.body as { token: string }).token : '';
+  const ok = tokenResetValido(token);
+  if (!ok) registrarFalha(`redef:${req.ip}`);
+  res.json({ ok, message: ok ? '' : 'Este link não é mais válido. Peça um novo em "Esqueci minha senha".' });
+});
+
+adminRouter.post('/redefinir', express.json({ limit: '2kb' }), (req, res) => {
+  if (!config.admin || !origemPropria(req)) { res.status(403).json({ ok: false, message: 'Requisição bloqueada.' }); return; }
+  if (bloqueado(`redef:${req.ip}`, 10, 15 * 60_000)) { res.status(429).json({ ok: false, message: 'Muitas tentativas. Espere alguns minutos.' }); return; }
+  const { token, nova } = (req.body ?? {}) as { token?: unknown; nova?: unknown };
+  if (typeof token !== 'string' || typeof nova !== 'string') { res.status(400).json({ ok: false, message: 'Pedido inválido.' }); return; }
+  const problema = validarSenhaNova(nova);
+  if (problema) { res.status(422).json({ ok: false, message: problema }); return; }   // não gasta o link
+  if (!consumirTokenReset(token)) {
+    registrarFalha(`redef:${req.ip}`);
+    res.status(410).json({ ok: false, message: 'Este link não é mais válido. Peça um novo em "Esqueci minha senha".' });
+    return;
+  }
+  setPassword(nova);
+  console.log('[painel] senha redefinida pelo link do e-mail');
+  res.json({ ok: true, message: 'Senha criada. Entre com a senha nova.' });
 });
 
 // ---------- tudo daqui para baixo exige login ----------
@@ -215,6 +306,40 @@ adminRouter.post('/api/bloqueios', sameOrigin, express.json({ limit: '2kb' }), a
     checkOutIso: typeof b.saida === 'string' ? b.saida : '',
     note: typeof b.obs === 'string' ? b.obs : '',
   }));
+});
+
+adminRouter.get('/api/conta', (_req, res) => {
+  res.set('Cache-Control', 'no-store').json({ usuario: config.admin?.user, emailRecuperacao: ESQUECI_ATIVO ? mascarar(config.admin?.email ?? '') : null });
+});
+
+function mascarar(email: string): string {
+  const [nome = '', dominio = ''] = email.split('@');
+  return `${nome.slice(0, 2)}${'•'.repeat(Math.max(2, nome.length - 2))}@${dominio}`;
+}
+
+adminRouter.post('/api/senha', sameOrigin, express.json({ limit: '2kb' }), (req, res) => {
+  const chave = `senha:${req.ip}`;
+  if (bloqueado(chave, 6, 15 * 60_000)) { res.status(429).json({ ok: false, message: 'Muitas tentativas. Espere alguns minutos.' }); return; }
+  const { atual, nova } = (req.body ?? {}) as { atual?: unknown; nova?: unknown };
+  if (typeof atual !== 'string' || typeof nova !== 'string') { res.status(400).json({ ok: false, message: 'Pedido inválido.' }); return; }
+  if (!checkPassword(atual)) {
+    registrarFalha(chave);
+    res.status(403).json({ ok: false, message: 'A senha atual está incorreta.' });
+    return;
+  }
+  const problema = validarSenhaNova(nova);
+  if (problema) { res.status(422).json({ ok: false, message: problema }); return; }
+  if (checkPassword(nova)) { res.status(422).json({ ok: false, message: 'Escolha uma senha diferente da atual.' }); return; }
+  setPassword(nova);
+  falhas.delete(chave);
+  console.log('[painel] senha trocada pelo painel');
+  res.set('Set-Cookie', cookieDeSessao(req)).json({ ok: true, message: 'Senha trocada. Os outros aparelhos precisam entrar de novo.' });
+});
+
+adminRouter.post('/api/sair-todos', sameOrigin, (req, res) => {
+  rotateEpoch();
+  console.log('[painel] todas as sessões encerradas');
+  res.set('Set-Cookie', cookieDeSessao(req)).json({ ok: true, message: 'Todos os outros aparelhos foram desconectados.' });
 });
 
 adminRouter.use('/api', (_req, res) => { res.status(404).json({ ok: false, message: 'Não encontrado.' }); });

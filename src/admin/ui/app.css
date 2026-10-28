@@ -228,3 +228,20 @@ body.login { min-height: 100vh; min-height: 100dvh; display: grid; place-items: 
 .erro { color: var(--err); background: var(--err-bg); padding: 10px 12px; border-radius: 12px; font-weight: 600; font-size: .92rem; margin: 0 0 14px; }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* recuperação e troca de senha */
+.esqueci { display: inline-block; margin-top: 16px; font-weight: 700; color: var(--brand-2); text-decoration: none; }
+.esqueci:hover { text-decoration: underline; }
+.dica-login { color: var(--muted); font-size: .85rem; margin: 14px 0 0; }
+.ok-msg { background: var(--ok-bg); color: var(--ok); padding: 12px 14px; border-radius: 12px; font-weight: 600; margin: 0 0 14px; }
+.forca { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: -4px 0 6px; }
+.forca i { height: 6px; border-radius: 99px; background: var(--line); transition: background .2s; }
+.forca[data-nivel="1"] i:nth-child(1) { background: var(--err); }
+.forca[data-nivel="2"] i:nth-child(-n+2) { background: #f5a524; }
+.forca[data-nivel="3"] i:nth-child(-n+3) { background: #7bc86c; }
+.forca[data-nivel="4"] i { background: var(--ok); }
+.forca-txt { margin: 0 0 12px; font-size: .84rem; font-weight: 700; color: var(--muted); min-height: 1.2em; }
+.campo-senha { display: grid; gap: 6px; margin-top: 14px; font-size: .9rem; font-weight: 700; }
+.campo-senha input { font: inherit; font-weight: 500; min-height: 50px; padding: 0 14px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); width: 100%; }
+.campo-senha input:focus { border-color: var(--brand); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent); }
+.login-box h1 + form, .login-box h1 + .sub + form { margin-top: 18px; }

@@ -13,6 +13,11 @@ O Thiago usa o **painel** em `/admin`, um aplicativo para o celular (login por t
 contagem regressiva ao vivo das datas seguras, botões Confirmar, Conversar no WhatsApp, +1 hora e Cancelar). Pode ser instalado na
 tela inicial. Ao confirmar, as datas seguem ocupadas; ao cancelar ou expirar, voltam a ficar livres no site.
 Os arquivos do painel ficam em `src/admin/ui/` e são copiados para `dist/` pelo `npm run build`.
+
+**Senha do painel.** A senha de partida é a do `.env` (`ADMIN_PASSWORD`). Depois, o Thiago troca em *Menu → Trocar senha*
+(fica guardada como hash no banco) e pode usar *Sair de todos os aparelhos*. Para o *Esqueci minha senha* por e-mail, rode
+`sudo bash /opt/thiago-veras/scripts/configurar-email.sh` (Gmail com senha de app). Plano B, se nada funcionar:
+`sudo bash /opt/thiago-veras/scripts/resetar-senha.sh` cria uma senha nova e mostra na tela.
 Sem as credenciais da Meta no `.env`, o agente do WhatsApp fica desligado e só o site e o painel funcionam.
 Teste da API: `npm run test:site`. Teste do agente: `npm run simulate`.
 

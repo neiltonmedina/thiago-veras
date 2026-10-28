@@ -63,6 +63,21 @@ addColumnIfMissing('reservations', 'pix_copy_paste', 'TEXT');
 addColumnIfMissing('reservations', 'paid_at', 'INTEGER');
 addColumnIfMissing('reservations', 'guest_name', 'TEXT');   // reservas feitas pelo site
 addColumnIfMissing('reservations', 'guests', 'INTEGER');
+
+// Credenciais do painel: a senha trocada pelo painel (guardada só como hash) e os links de redefinição
+db.exec(`
+  CREATE TABLE IF NOT EXISTS admin_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS reset_tokens (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at INTEGER NOT NULL,
+    used_at    INTEGER,
+    created_at INTEGER NOT NULL
+  );
+`);
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_res_pix_txid ON reservations(pix_txid) WHERE pix_txid IS NOT NULL`);
 
 /** Fecha o banco. Chamar em graceful shutdown. */

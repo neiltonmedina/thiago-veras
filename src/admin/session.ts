@@ -1,34 +1,19 @@
 /**
  * Sessão do painel por cookie assinado (HMAC). O cookie guarda só usuário e
- * validade; a assinatura usa um segredo derivado da senha, então trocar a senha
- * encerra todas as sessões abertas.
+ * validade; a assinatura usa um segredo derivado da senha e da "época", então trocar
+ * a senha ou pedir "sair de todos os aparelhos" encerra todas as sessões abertas.
  */
-import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { config } from '../config.js';
+import { sessionSecret, safeEqual, checkCredentials } from './credentials.js';
 
 export const SESSION_COOKIE = 'painel_sessao';
 export const SESSION_DAYS = 30;
 
-function secret(): Buffer {
-  return createHash('sha256').update(`painel|${config.admin?.user ?? ''}|${config.admin?.password ?? ''}`).digest();
-}
+export { safeEqual, checkCredentials };
 
 function sign(payload: string): string {
-  return createHmac('sha256', secret()).update(payload).digest('base64url');
-}
-
-export function safeEqual(a: string, b: string): boolean {
-  const ba = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ba.length === bb.length && timingSafeEqual(ba, bb);
-}
-
-export function checkCredentials(user: string, pass: string): boolean {
-  if (!config.admin) return false;
-  // compara os dois campos sempre, para não revelar qual deles errou
-  const okUser = safeEqual(user, config.admin.user);
-  const okPass = safeEqual(pass, config.admin.password);
-  return okUser && okPass;
+  return createHmac('sha256', sessionSecret()).update(payload).digest('base64url');
 }
 
 export function createSessionToken(now = Date.now()): string {

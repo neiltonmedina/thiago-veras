@@ -45,6 +45,16 @@ const schema = z.object({
 
   ADMIN_USER: z.string().default('thiago'),
   ADMIN_PASSWORD: optional,
+  // E-mail do Thiago: recebe o link de "esqueci minha senha". Só vale com o envio de e-mail configurado.
+  ADMIN_EMAIL: z.string().trim().toLowerCase().email().optional().catch(undefined),
+  // Endereço público do painel, usado no link do e-mail (nunca montado a partir do pedido recebido)
+  PUBLIC_URL: z.string().url().default('https://163-176-74-32.sslip.io'),
+  // Envio de e-mail (Gmail com "senha de app", Brevo ou qualquer SMTP)
+  SMTP_HOST: z.string().default('smtp.gmail.com'),
+  SMTP_PORT: z.coerce.number().int().default(465),
+  SMTP_USER: optional,
+  SMTP_PASS: optional,
+  MAIL_FROM: optional,
 
   DEPOSIT_PERCENT: z.coerce.number().int().min(1).max(100).default(50),
   // Quanto tempo a data fica segura antes de a pré-reserva expirar sem pagamento
@@ -105,7 +115,19 @@ export const config = {
   supportPhone: env.SUPPORT_PHONE,
   mediaBaseUrl: env.MEDIA_BASE_URL.replace(/\/$/, ''),
   dbPath: env.DB_PATH,
-  admin: env.ADMIN_PASSWORD ? { user: env.ADMIN_USER, password: env.ADMIN_PASSWORD } : null,
+  admin: env.ADMIN_PASSWORD
+    ? { user: env.ADMIN_USER, password: env.ADMIN_PASSWORD, email: env.ADMIN_EMAIL ?? null }
+    : null,
+  publicUrl: env.PUBLIC_URL.replace(/\/$/, ''),
+  mail: {
+    host: env.SMTP_HOST,
+    port: env.SMTP_PORT,
+    user: env.SMTP_USER ?? '',
+    pass: (env.SMTP_PASS ?? '').replace(/\s+/g, ''), // a senha de app do Google vem com espaços
+    from: env.MAIL_FROM ?? (env.SMTP_USER ? `Painel Thiago Veras <${env.SMTP_USER}>` : ''),
+    // "Esqueci minha senha" só liga com e-mail do Thiago e conta de envio completos (ou em simulação)
+    enabled: isSimulate ? !!env.ADMIN_EMAIL : !!(env.ADMIN_EMAIL && env.SMTP_USER && env.SMTP_PASS),
+  },
   depositPercent: env.DEPOSIT_PERCENT,
   holdMinutes: env.HOLD_MINUTES,
   webOrigins: env.WEB_ORIGINS.split(',').map(o => o.trim().replace(/\/$/, '')).filter(Boolean),

@@ -38,6 +38,7 @@ setv SUPPORT_PHONE 5586998662992
 setv MEDIA_BASE_URL "https://$DOMINIO/media"
 setv HOLD_MINUTES 120
 setv WEB_ORIGINS https://thiagoverasempreendimentos.github.io
+setv PUBLIC_URL "https://$DOMINIO"
 # WhatsApp da Meta fica desligado: os quatro campos precisam estar vazios
 for v in WHATSAPP_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_VERIFY_TOKEN WHATSAPP_APP_SECRET; do
   sudo sed -i "/^$v=/d" "$E"
@@ -63,6 +64,11 @@ echo "API:       ${PUBLICO:-sem resposta}"
 echo
 sudo journalctl -u thiago-veras -n 7 --no-pager | tail -7
 echo "────────────────────────────────────"
+if ! sudo grep -q '^SMTP_PASS=.\+' "$E"; then
+  echo
+  echo "✉️  \"Esqueci minha senha\" por e-mail ainda não está ligado. Para ligar:"
+  echo "   ssh -t -i ~/.ssh/neilton-vm ubuntu@163.176.74.32 'sudo bash /opt/thiago-veras/scripts/configurar-email.sh'"
+fi
 if [ -n "$SENHA_NOVA" ]; then
   echo
   echo "🔑 Painel do Thiago:  https://$DOMINIO/admin"

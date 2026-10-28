@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#2b2b2b">
+<title>Esqueci minha senha — Painel Thiago Veras</title>
+<link rel="icon" type="image/png" href="/admin/ui/icon-192.png">
+<link rel="stylesheet" href="/admin/ui/app.css?v=__V__">
+</head>
+<body class="login" data-pagina="esqueci">
+<main class="login-box">
+  <img class="login-logo" src="/admin/ui/logo-icone.png" alt="" width="84" height="48">
+  <h1>Esqueci minha senha</h1>
+  <p class="sub">Enviaremos um link para criar uma senha nova.</p>
+  <form id="f" novalidate>
+    <label>Seu e-mail
+      <input id="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="voce@exemplo.com" required>
+    </label>
+    <p id="msg" class="erro" role="alert" hidden></p>
+    <button class="btn primario grande" id="enviar" type="submit">Enviar link</button>
+  </form>
+  <div id="feito" hidden>
+    <p class="ok-msg" id="feito-txt"></p>
+    <p class="dica-login">O link vale por 30 minutos e só pode ser usado uma vez.</p>
+  </div>
+  <a class="esqueci" href="/admin/login">← Voltar para entrar</a>
+</main>
+<script src="/admin/ui/senha.js?v=__V__"></script>
+</body>
+</html>
